@@ -1,0 +1,20 @@
+MOSS Desk Pet v1.3.5 — macOS 首次运行
+
+1. 请先完整解压 ZIP，不要直接在压缩包预览中运行。
+2. 将 MOSS-Desk-Pet.app 拖入“应用程序”文件夹。
+3. 打开 macOS 自带的“终端”，完整复制并运行下面这一行：
+
+/usr/bin/xattr -cr "/Applications/MOSS-Desk-Pet.app" && /usr/bin/codesign --force --deep --sign - --timestamp=none "/Applications/MOSS-Desk-Pet.app" && /usr/bin/open "/Applications/MOSS-Desk-Pet.app"
+
+4. 命令运行成功后，以后可以直接从“应用程序”中打开 MOSS。
+
+如果命令提示 No such file or directory，说明应用还没有放进“应用程序”文件夹，或应用名称被修改。
+
+为什么需要终端命令：
+当前版本没有 Apple Developer ID，不能完成苹果公证。应用在构建时已经 ad-hoc 签名并通过 codesign 深度验证；上面的终端命令会移除下载隔离标记并在当前 Mac 上重新签名。
+
+注意：双击未公证的 .command 脚本本身也会被 Gatekeeper 拦截，因此安装包不附带 .command 文件。
+
+支持：
+- Apple Silicon（M1/M2/M3/M4 及后续芯片）：使用 arm64 包。
+- Intel Mac：使用 x64 包。

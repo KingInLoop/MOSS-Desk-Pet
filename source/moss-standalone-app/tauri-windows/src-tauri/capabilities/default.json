@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "MOSS renderer access to its own backend commands and event stream.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

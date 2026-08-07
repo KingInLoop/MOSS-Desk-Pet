@@ -1,0 +1,26 @@
+{
+  "name": "MOSS Desk Pet macOS",
+  "version": "1.3.5",
+  "builtAt": "2026-08-07",
+  "changeScope": "macOS fullscreen native panel only",
+  "window": {
+    "type": "panel",
+    "workspaces": "all",
+    "visibleOnFullScreen": true,
+    "alwaysOnTopLevel": "screen-saver",
+    "relativeLevel": 1
+  },
+  "verification": {
+    "unitTests": 29,
+    "macOSFullscreenLevelSmokeTest": "passed",
+    "macOSFullscreenIntegrationTest": {
+      "status": "passed",
+      "ordinaryWindowVisiblePixels": 0,
+      "panelWindowVisiblePixels": 35490
+    },
+    "trayIconSmokeTest": "passed",
+    "contextMenuSmokeTest": "passed",
+    "arm64AdHocSignature": "verified",
+    "x64AdHocSignature": "verified"
+  }
+}

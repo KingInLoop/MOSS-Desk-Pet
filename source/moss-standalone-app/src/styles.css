@@ -1,0 +1,174 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --pet-width: 144px;
+  --pet-height: 156px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+#app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#pet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--pet-width);
+  height: var(--pet-height);
+  cursor: grab;
+  -webkit-app-region: no-drag;
+}
+
+#pet.dragging { cursor: grabbing; }
+
+#app-shell.panel-right #pet { right: auto; left: 0; }
+#app-shell.panel-down #pet { top: 0; bottom: auto; }
+
+#sprite {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+}
+
+#task-toggle {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 30px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  background: rgb(8 14 20 / 76%);
+  color: #f2f7fa;
+  font: 600 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+#task-toggle:hover { background: rgb(20 31 42 / 90%); }
+#task-toggle span { font-size: 16px; transform: translateY(-1px); }
+#app-shell.details-open #task-toggle span { transform: rotate(180deg) translateY(1px); }
+
+#task-panel {
+  position: absolute;
+  z-index: 4;
+  inset: 0 auto 0 0;
+  width: 280px;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 16px;
+  background: rgb(10 16 23 / 94%);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 38%);
+  color: #f4f7fa;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+#app-shell.panel-right #task-panel { right: 0; left: auto; }
+
+#app-shell:not(.details-open) #task-panel { display: none; }
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.panel-header strong { display: block; font-size: 14px; line-height: 1.2; }
+#panel-summary { display: block; margin-top: 3px; color: #8f9dac; font-size: 11px; }
+#panel-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 9%);
+  color: #d9e0e7;
+  font-size: 18px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+#task-list {
+  height: calc(100% - 52px);
+  padding-top: 8px;
+  overflow: auto;
+}
+
+.task-item {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr);
+  gap: 9px;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+
+.task-item + .task-item { border-top: 1px solid rgb(255 255 255 / 7%); }
+.task-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #00d9ff; box-shadow: 0 0 5px #00d9ff; }
+.task-title { overflow: hidden; color: #f6f8fa; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.task-meta { margin-top: 3px; color: #91a0ae; font-size: 10px; line-height: 1.3; }
+.task-empty { padding: 26px 8px; color: #8996a3; font-size: 12px; text-align: center; }
+
+#status {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #7b8794;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%), 0 0 3px currentColor;
+  color: #7b8794;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+#status.running { color: #00d9ff; background: #00d9ff; }
+#status.completed { color: #36e06f; background: #36e06f; }
+#status.failed { color: #ff4058; background: #ff4058; }
+#status.hidden { display: none; }
+
+#toast {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  max-width: calc(100% - 18px);
+  padding: 4px 9px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  background: rgb(8 14 20 / 78%);
+  color: #f2f7fa;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translate(-50%, 5px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+
+#toast.visible { opacity: 1; transform: translate(-50%, 0); }

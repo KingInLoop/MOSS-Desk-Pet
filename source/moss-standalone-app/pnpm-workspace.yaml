@@ -1,0 +1,9 @@
+packages:
+  - .
+  - tauri-windows
+
+allowBuilds:
+  electron: true
+
+onlyBuiltDependencies:
+  - electron

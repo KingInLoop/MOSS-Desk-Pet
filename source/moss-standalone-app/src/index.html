@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MOSS Desk Pet</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main id="app-shell">
+      <aside id="task-panel" aria-hidden="true">
+        <header class="panel-header">
+          <div>
+            <strong>正在运行</strong>
+            <span id="panel-summary">0 个对话</span>
+          </div>
+          <button id="panel-close" type="button" aria-label="收起任务详情">×</button>
+        </header>
+        <div id="task-list"></div>
+      </aside>
+      <section id="pet" title="拖动 MOSS；右键打开设置；双击切换皮肤">
+        <canvas id="sprite" width="192" height="208" aria-label="MOSS desktop pet"></canvas>
+        <button id="task-toggle" type="button" title="查看正在运行的对话" aria-expanded="false">
+          <span aria-hidden="true">‹</span><b id="task-count">0</b>
+        </button>
+        <span id="status" aria-hidden="true"></span>
+        <div id="toast" aria-live="polite"></div>
+      </section>
+    </main>
+    <script src="animation-config.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

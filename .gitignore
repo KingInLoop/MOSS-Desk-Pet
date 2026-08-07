@@ -1,0 +1,5 @@
+# Packaged release artifacts are published as GitHub Release assets.
+/releases/**/*.zip
+/releases/**/*.exe
+/source/MOSS-Desk-Pet-source-*.zip
+
