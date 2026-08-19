@@ -31,7 +31,7 @@ test('shrinking applies immediately while preserving the pet lower-right anchor'
 });
 
 test('expanded task details add a fixed panel without stretching the pet', () => {
-  assert.deepEqual(windowDimensions(0.75, true), { width: 432, height: 232 });
+  assert.deepEqual(windowDimensions(0.75, true), { width: 432, height: 304 });
   assert.deepEqual(petDimensions(0.75), { width: 144, height: 156 });
 });
 

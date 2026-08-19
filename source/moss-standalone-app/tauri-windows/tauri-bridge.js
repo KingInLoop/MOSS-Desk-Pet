@@ -17,6 +17,8 @@ window.mossPet = {
   onSettings: (callback) => subscribe('settings', callback),
   onPetEvent: (callback) => subscribe('pet-event', callback),
   onTaskSnapshot: (callback) => subscribe('task-snapshot', callback),
+  onUsageSnapshot: (callback) => subscribe('usage-snapshot', callback),
+  onPanelMode: (callback) => subscribe('panel-mode', callback),
   onDetailsExpanded: (callback) => subscribe('details-expanded', (value) => callback(Boolean(value))),
   onPanelPlacement: (callback) => subscribe('panel-placement', callback),
   onDirection: (callback) => subscribe('look-direction', callback),
@@ -28,5 +30,7 @@ window.mossPet = {
       .then(() => invoke('move_pet_by', { deltaX, deltaY }));
     return dragMoveQueue;
   },
-  setDetailsExpanded: (expanded) => invoke('set_details_expanded', { expanded: Boolean(expanded) })
+  setDetailsExpanded: (expanded) => invoke('set_details_expanded', { expanded: Boolean(expanded) }),
+  setPanelMode: (mode) => invoke('set_panel_mode', { mode }),
+  refreshUsage: () => invoke('refresh_usage')
 };

@@ -14,6 +14,7 @@ const {
   Tray
 } = require('electron');
 const { CodexSessionMonitor } = require('./codex-monitor');
+const { CodexUsageMonitor } = require('./codex-usage');
 const { readSettings, writeSettings } = require('./settings');
 const { resolveTrayIconMode, usesSystemTemplateIcon } = require('./tray-icons');
 const {
@@ -33,11 +34,14 @@ const {
 let petWindow;
 let tray;
 let monitor;
+let usageMonitor;
 let settings;
 let cursorTimer;
 let detailsExpanded = false;
+let panelMode = 'tasks';
 let panelPlacement = { ...DEFAULT_PANEL_PLACEMENT };
 let status = { activeCount: 0, source: null, tasks: [] };
+let usageSnapshot = { status: 'loading', source: null, updatedAt: null, planType: null, limits: [], dailyUsage: [], message: '正在读取额度…' };
 
 const SOURCE_LABELS = {
   desktop: 'Codex 桌面端',
@@ -103,6 +107,7 @@ function createPetWindow() {
       petWindow.setPosition(area.x + area.width - pet.width - 24, area.y, false);
       setDetailsExpanded(true);
     }
+    if (process.env.MOSS_CAPTURE_USAGE === '1') setPanel('usage', true);
     if (process.env.MOSS_CAPTURE_SCALE_SEQUENCE) {
       const sequence = process.env.MOSS_CAPTURE_SCALE_SEQUENCE
         .split(',')
@@ -213,7 +218,8 @@ function rebuildTrayMenu() {
     { label: statusMenuLabel(), enabled: false },
     { type: 'separator' },
     { label: petWindow?.isVisible() ? '隐藏 MOSS' : '显示 MOSS', click: () => petWindow?.isVisible() ? petWindow.hide() : petWindow.showInactive() },
-    { label: `查看运行任务（${status.activeCount || 0}）`, click: () => setDetailsExpanded(true) },
+    { label: `查看运行任务（${status.activeCount || 0}）`, click: () => setPanel('tasks', true) },
+    { label: '查看订阅额度', click: () => setPanel('usage', true) },
     ...settingsMenuItems(),
     { type: 'separator' },
     { label: '退出 MOSS', click: () => { app.isQuitting = true; app.quit(); } }
@@ -225,7 +231,8 @@ function showPetContextMenu() {
   const menu = Menu.buildFromTemplate([
     { label: statusMenuLabel(), enabled: false },
     { type: 'separator' },
-    { label: detailsExpanded ? '收起运行任务' : `查看运行任务（${status.activeCount || 0}）`, click: () => setDetailsExpanded(!detailsExpanded) },
+    { label: detailsExpanded && panelMode === 'tasks' ? '收起运行任务' : `查看运行任务（${status.activeCount || 0}）`, click: () => setPanel('tasks', !(detailsExpanded && panelMode === 'tasks')) },
+    { label: detailsExpanded && panelMode === 'usage' ? '收起订阅额度' : '查看订阅额度', click: () => setPanel('usage', !(detailsExpanded && panelMode === 'usage')) },
     ...settingsMenuItems(),
     { type: 'separator' },
     { label: '隐藏 MOSS', click: () => petWindow.hide() },
@@ -315,6 +322,25 @@ function setDetailsExpanded(next) {
   rebuildTrayMenu();
 }
 
+function setPanel(mode, expanded = true) {
+  panelMode = mode === 'usage' ? 'usage' : 'tasks';
+  setDetailsExpanded(expanded);
+  petWindow?.webContents.send('panel-mode', panelMode);
+  if (expanded && panelMode === 'usage') usageMonitor?.refresh();
+}
+
+function sendUsageSnapshot() {
+  petWindow?.webContents.send('usage-snapshot', usageSnapshot);
+}
+
+function wireUsageMonitor() {
+  usageMonitor = new CodexUsageMonitor((snapshot) => {
+    usageSnapshot = snapshot;
+    sendUsageSnapshot();
+  });
+  usageMonitor.start();
+}
+
 function wireMonitor() {
   monitor = new CodexSessionMonitor();
   monitor.on('ready', (snapshot) => {
@@ -377,8 +403,10 @@ ipcMain.on('renderer-ready', () => {
   petWindow?.webContents.send('settings', settings);
   petWindow?.webContents.send('pet-event', { type: status.activeCount > 0 ? 'running' : 'idle', ...uiSnapshot() });
   petWindow?.webContents.send('details-expanded', detailsExpanded);
+  petWindow?.webContents.send('panel-mode', panelMode);
   petWindow?.webContents.send('panel-placement', panelPlacement);
   sendTaskSnapshot();
+  sendUsageSnapshot();
 });
 ipcMain.on('toggle-skin', () => saveAndApply({ skin: settings.skin === 'dark' ? 'light' : 'dark' }));
 ipcMain.on('show-context-menu', (event) => {
@@ -397,6 +425,8 @@ ipcMain.on('move-pet-by', (event, delta = {}) => {
   );
 });
 ipcMain.on('set-details-expanded', (_event, expanded) => setDetailsExpanded(expanded));
+ipcMain.on('set-panel-mode', (_event, mode) => setPanel(mode, true));
+ipcMain.on('refresh-usage', () => usageMonitor?.refresh());
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
@@ -416,6 +446,7 @@ else {
       if (!usesSystemTemplateIcon(process.platform) && settings.trayIconMode === 'auto') refreshTrayIcon();
     });
     wireMonitor();
+    wireUsageMonitor();
     startCursorTracking();
   });
 }
@@ -423,6 +454,7 @@ else {
 app.on('before-quit', () => { app.isQuitting = true; });
 app.on('will-quit', () => {
   monitor?.stop();
+  usageMonitor?.stop();
   if (cursorTimer) clearInterval(cursorTimer);
 });
 app.on('window-all-closed', () => {});

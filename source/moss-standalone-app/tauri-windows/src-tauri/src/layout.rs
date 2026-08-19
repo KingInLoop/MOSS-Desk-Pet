@@ -4,7 +4,7 @@ pub const PET_WIDTH: f64 = 192.0;
 pub const PET_HEIGHT: f64 = 208.0;
 pub const PANEL_WIDTH: f64 = 280.0;
 pub const PANEL_GAP: f64 = 8.0;
-pub const PANEL_HEIGHT: f64 = 232.0;
+pub const PANEL_HEIGHT: f64 = 304.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {

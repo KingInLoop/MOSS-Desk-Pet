@@ -1,6 +1,7 @@
 mod layout;
 mod monitor;
 mod settings;
+mod usage;
 
 use layout::{pet_bounds, reflow, window_size, Placement, Rect};
 use monitor::{MonitorEvent, PublicTask, Snapshot};
@@ -29,8 +30,10 @@ struct RuntimeState {
     settings: Settings,
     settings_path: PathBuf,
     details_expanded: bool,
+    panel_mode: String,
     placement: Placement,
     snapshot: Snapshot,
+    usage: usage::UsageSnapshot,
 }
 
 struct AppState {
@@ -281,7 +284,7 @@ fn checked<R: Runtime>(
 }
 
 fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
-    let (settings, details_expanded, snapshot, visible) = {
+    let (settings, details_expanded, panel_mode, snapshot, visible) = {
         let state = app.state::<AppState>();
         let runtime = state.runtime.lock().expect("runtime state poisoned");
         let visible = app
@@ -291,6 +294,7 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
         (
             runtime.settings.clone(),
             runtime.details_expanded,
+            runtime.panel_mode.clone(),
             runtime.snapshot.clone(),
             visible,
         )
@@ -319,10 +323,21 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
     let tasks = MenuItem::with_id(
         app,
         "tasks:toggle",
-        if context && details_expanded {
+        if context && details_expanded && panel_mode == "tasks" {
             "收起运行任务".into()
         } else {
             format!("查看运行任务（{}）", snapshot.active_count)
+        },
+        true,
+        None::<&str>,
+    )?;
+    let usage = MenuItem::with_id(
+        app,
+        "usage:toggle",
+        if context && details_expanded && panel_mode == "usage" {
+            "收起订阅额度"
+        } else {
+            "查看订阅额度"
         },
         true,
         None::<&str>,
@@ -435,6 +450,7 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
         items.push(&window_toggle);
     }
     items.push(&tasks);
+    items.push(&usage);
     items.push(&skin);
     items.push(&eye);
     items.push(&size);
@@ -592,6 +608,32 @@ fn set_details(app: &AppHandle, expanded: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn set_panel(app: &AppHandle, mode: &str, expanded: bool) -> Result<(), String> {
+    if let Ok(mut runtime) = app.state::<AppState>().runtime.lock() {
+        runtime.panel_mode = if mode == "usage" { "usage" } else { "tasks" }.into();
+    }
+    set_details(app, expanded)?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit("panel-mode", mode);
+    }
+    if expanded && mode == "usage" {
+        refresh_usage_now(app.clone());
+    }
+    Ok(())
+}
+
+fn refresh_usage_now(app: AppHandle) {
+    thread::spawn(move || {
+        let snapshot = usage::read();
+        if let Ok(mut runtime) = app.state::<AppState>().runtime.lock() {
+            runtime.usage = snapshot.clone();
+        }
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.emit("usage-snapshot", snapshot);
+        }
+    });
+}
+
 fn handle_menu(app: &AppHandle, id: &str) {
     let result = match id {
         "app:quit" => {
@@ -620,12 +662,24 @@ fn handle_menu(app: &AppHandle, id: &str) {
                 .state::<AppState>()
                 .runtime
                 .lock()
-                .map(|runtime| !runtime.details_expanded)
+                .map(|runtime| !(runtime.details_expanded && runtime.panel_mode == "tasks"))
                 .unwrap_or(true);
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
             }
-            set_details(app, expanded)
+            set_panel(app, "tasks", expanded)
+        }
+        "usage:toggle" => {
+            let expanded = app
+                .state::<AppState>()
+                .runtime
+                .lock()
+                .map(|runtime| !(runtime.details_expanded && runtime.panel_mode == "usage"))
+                .unwrap_or(true);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+            }
+            set_panel(app, "usage", expanded)
         }
         "skin:dark" => update_settings(app, |settings| settings.skin = "dark".into()),
         "skin:light" => update_settings(app, |settings| settings.skin = "light".into()),
@@ -677,21 +731,25 @@ fn handle_menu(app: &AppHandle, id: &str) {
 
 #[tauri::command]
 fn renderer_ready(app: AppHandle) {
-    let (settings, expanded, placement, snapshot) = {
+    let (settings, expanded, panel_mode, placement, snapshot, usage) = {
         let state = app.state::<AppState>();
         let runtime = state.runtime.lock().expect("runtime state poisoned");
         (
             runtime.settings.clone(),
             runtime.details_expanded,
+            runtime.panel_mode.clone(),
             runtime.placement,
             runtime.snapshot.clone(),
+            runtime.usage.clone(),
         )
     };
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("settings", settings);
         let _ = window.emit("details-expanded", expanded);
+        let _ = window.emit("panel-mode", panel_mode);
         let _ = window.emit("panel-placement", placement);
         emit_snapshot(&window, &snapshot);
+        let _ = window.emit("usage-snapshot", usage);
         emit_pet_event(
             &window,
             if snapshot.active_count > 0 {
@@ -721,6 +779,16 @@ fn toggle_skin(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn set_details_expanded(app: AppHandle, expanded: bool) -> Result<(), String> {
     set_details(&app, expanded)
+}
+
+#[tauri::command]
+fn set_panel_mode(app: AppHandle, mode: String) -> Result<(), String> {
+    set_panel(&app, &mode, true)
+}
+
+#[tauri::command]
+fn refresh_usage(app: AppHandle) {
+    refresh_usage_now(app);
 }
 
 #[tauri::command]
@@ -853,8 +921,10 @@ pub fn run() {
                     settings: settings.clone(),
                     settings_path,
                     details_expanded: false,
+                    panel_mode: "tasks".into(),
                     placement: Placement::default(),
                     snapshot: Snapshot::default(),
+                    usage: usage::UsageSnapshot::default(),
                 }),
                 stop: stop.clone(),
             });
@@ -903,6 +973,17 @@ pub fn run() {
                 })
             });
             start_cursor_tracker(app.handle().clone(), stop);
+            refresh_usage_now(app.handle().clone());
+            let usage_app = app.handle().clone();
+            let usage_stop = app.state::<AppState>().stop.clone();
+            thread::spawn(move || {
+                while !usage_stop.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_secs(300));
+                    if !usage_stop.load(Ordering::Relaxed) {
+                        refresh_usage_now(usage_app.clone());
+                    }
+                }
+            });
             Ok(())
         })
         .on_menu_event(|app, event| handle_menu(app, event.id().as_ref()))
@@ -929,6 +1010,8 @@ pub fn run() {
             renderer_ready,
             toggle_skin,
             set_details_expanded,
+            set_panel_mode,
+            refresh_usage,
             show_context_menu,
             move_pet_by
         ])
