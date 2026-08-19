@@ -1,7 +1,7 @@
 {
   "name": "moss-desk-pet-tauri-windows",
   "private": true,
-  "version": "1.3.6",
+  "version": "1.3.7",
   "scripts": {
     "sync-ui": "node sync-ui.mjs",
     "dev": "node sync-ui.mjs && cargo tauri dev",

@@ -8,7 +8,6 @@ const pet = document.getElementById('pet');
 const shell = document.getElementById('app-shell');
 const taskToggle = document.getElementById('task-toggle');
 const taskCount = document.getElementById('task-count');
-const usageToggle = document.getElementById('usage-toggle');
 const taskPanel = document.getElementById('task-panel');
 const taskList = document.getElementById('task-list');
 const panelSummary = document.getElementById('panel-summary');
@@ -43,6 +42,7 @@ let dragStarted = false;
 let dragOrigin = null;
 let dragLastPoint = null;
 let dragEndedAt = Number.NEGATIVE_INFINITY;
+let singleClickTimer;
 
 const DRAG_THRESHOLD = 4;
 
@@ -151,7 +151,6 @@ function setDetailsOpen(next, notifyMain = true) {
   shell.classList.toggle('details-open', detailsOpen);
   taskPanel.setAttribute('aria-hidden', String(!detailsOpen));
   taskToggle.setAttribute('aria-expanded', String(detailsOpen));
-  usageToggle.setAttribute('aria-expanded', String(detailsOpen && panelMode === 'usage'));
   if (notifyMain) window.mossPet.setDetailsExpanded(detailsOpen);
 }
 
@@ -161,7 +160,6 @@ function setPanelMode(mode, notifyMain = false) {
   usageView.hidden = panelMode !== 'usage';
   panelTitle.textContent = panelMode === 'usage' ? '订阅额度' : '正在运行';
   taskToggle.classList.toggle('active', panelMode === 'tasks' && detailsOpen);
-  usageToggle.classList.toggle('active', panelMode === 'usage' && detailsOpen);
   if (panelMode === 'tasks') renderTasks(); else renderUsage();
   if (notifyMain) window.mossPet.setPanelMode(panelMode);
 }
@@ -189,6 +187,9 @@ function renderTasks() {
   for (const task of tasks) {
     const item = document.createElement('article');
     item.className = 'task-item';
+    item.tabIndex = 0;
+    item.setAttribute('role', 'button');
+    item.setAttribute('aria-label', `打开任务：${task.title || '未命名对话'}`);
     const dot = document.createElement('span');
     dot.className = 'task-dot';
     const body = document.createElement('div');
@@ -202,6 +203,17 @@ function renderTasks() {
     meta.textContent = `${source} · 运行中 ${elapsedLabel(task.startedAt)}`;
     body.append(title, meta);
     item.append(dot, body);
+    const openTask = async () => {
+      const result = await window.mossPet.openTask(task.id);
+      if (result?.ok) setDetailsOpen(false);
+      else showToast(result?.message || '无法打开对应任务');
+    };
+    item.addEventListener('click', openTask);
+    item.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openTask();
+    });
     taskList.append(item);
   }
 }
@@ -355,20 +367,25 @@ document.addEventListener('contextmenu', (event) => {
 });
 
 pet.addEventListener('dblclick', (event) => {
+  clearTimeout(singleClickTimer);
   event.preventDefault();
   event.stopPropagation();
   if (performance.now() - dragEndedAt < 320) return;
   window.mossPet.toggleSkin();
 });
+pet.addEventListener('click', (event) => {
+  if (event.button !== 0 || event.target.closest('button')) return;
+  if (performance.now() - dragEndedAt < 320 || !settings.clickPetForUsage) return;
+  clearTimeout(singleClickTimer);
+  singleClickTimer = setTimeout(() => {
+    if (detailsOpen && panelMode === 'usage') setDetailsOpen(false);
+    else { setPanelMode('usage', true); setDetailsOpen(true, false); }
+  }, 240);
+});
 taskToggle.addEventListener('click', (event) => {
   event.stopPropagation();
   if (detailsOpen && panelMode === 'tasks') setDetailsOpen(false);
   else { setPanelMode('tasks', true); setDetailsOpen(true, false); }
-});
-usageToggle.addEventListener('click', (event) => {
-  event.stopPropagation();
-  if (detailsOpen && panelMode === 'usage') setDetailsOpen(false);
-  else { setPanelMode('usage', true); setDetailsOpen(true, false); }
 });
 usageRefresh.addEventListener('click', () => { usageNote.textContent = '正在刷新…'; window.mossPet.refreshUsage(); });
 panelClose.addEventListener('click', () => setDetailsOpen(false));

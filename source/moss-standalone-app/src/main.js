@@ -11,6 +11,7 @@ const {
   nativeTheme,
   Notification,
   screen,
+  shell,
   Tray
 } = require('electron');
 const { CodexSessionMonitor } = require('./codex-monitor');
@@ -201,6 +202,7 @@ function settingsMenuItems() {
     checkedMenu('始终置顶', settings.alwaysOnTop, () => saveAndApply({ alwaysOnTop: !settings.alwaysOnTop })),
     checkedMenu('任务状态通知', settings.notifications, () => saveAndApply({ notifications: !settings.notifications })),
     checkedMenu('显示状态灯', settings.showStatusBadge, () => saveAndApply({ showStatusBadge: !settings.showStatusBadge })),
+    checkedMenu('单击桌宠查看额度', settings.clickPetForUsage, () => saveAndApply({ clickPetForUsage: !settings.clickPetForUsage })),
     checkedMenu('登录时启动', settings.launchAtLogin, () => saveAndApply({ launchAtLogin: !settings.launchAtLogin }))
   ];
 }
@@ -312,6 +314,28 @@ function uiSnapshot(snapshot = status) {
 
 function sendTaskSnapshot() {
   petWindow?.webContents.send('task-snapshot', uiSnapshot());
+}
+
+function taskTarget(task) {
+  if (!task) return null;
+  if (task.source === 'vscode') {
+    if (!task.cwd) return 'vscode://';
+    const normalized = task.cwd.replaceAll('\\', '/');
+    return `vscode://file/${encodeURI(normalized).replaceAll('#', '%23').replaceAll('?', '%3F')}`;
+  }
+  return task.id ? `codex://threads/${encodeURIComponent(task.id)}` : 'codex://';
+}
+
+async function openTask(taskId) {
+  const task = status.tasks.find((candidate) => candidate.id === taskId);
+  const target = taskTarget(task);
+  if (!target) return { ok: false, message: '任务已结束或不存在' };
+  try {
+    await shell.openExternal(target);
+    return { ok: true };
+  } catch {
+    return { ok: false, message: task?.source === 'vscode' ? '无法唤起 VS Code' : '无法唤起 Codex' };
+  }
 }
 
 function setDetailsExpanded(next) {
@@ -426,6 +450,12 @@ ipcMain.on('move-pet-by', (event, delta = {}) => {
 });
 ipcMain.on('set-details-expanded', (_event, expanded) => setDetailsExpanded(expanded));
 ipcMain.on('set-panel-mode', (_event, mode) => setPanel(mode, true));
+ipcMain.handle('open-task', (event, taskId) => {
+  if (event.sender !== petWindow?.webContents || typeof taskId !== 'string') {
+    return { ok: false, message: '无效的任务' };
+  }
+  return openTask(taskId);
+});
 ipcMain.on('refresh-usage', () => usageMonitor?.refresh());
 
 const gotLock = app.requestSingleInstanceLock();

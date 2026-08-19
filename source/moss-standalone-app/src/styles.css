@@ -64,23 +64,7 @@ html, body {
   -webkit-app-region: no-drag;
 }
 
-#usage-toggle {
-  position: absolute;
-  z-index: 3;
-  top: 6px;
-  left: 42px;
-  height: 22px;
-  padding: 0 7px;
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 999px;
-  background: rgb(8 14 20 / 76%);
-  color: #b9c6d1;
-  font: 600 10px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-#usage-toggle:hover, #usage-toggle.active, #task-toggle.active { background: rgb(20 52 65 / 94%); color: #eafcff; }
+#task-toggle.active { background: rgb(20 52 65 / 94%); color: #eafcff; }
 
 #task-toggle:hover { background: rgb(20 31 42 / 90%); }
 #task-toggle span { font-size: 16px; transform: translateY(-1px); }
@@ -159,9 +143,12 @@ html, body {
   gap: 9px;
   padding: 8px 6px;
   border-radius: 10px;
+  cursor: pointer;
+  outline: none;
 }
 
 .task-item + .task-item { border-top: 1px solid rgb(255 255 255 / 7%); }
+.task-item:hover, .task-item:focus-visible { background: rgb(255 255 255 / 8%); }
 .task-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #00d9ff; box-shadow: 0 0 5px #00d9ff; }
 .task-title { overflow: hidden; color: #f6f8fa; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta { margin-top: 3px; color: #91a0ae; font-size: 10px; line-height: 1.3; }

@@ -74,6 +74,7 @@ test('reconstructs main-surface activity and ignores subagent sessions', () => {
   assert.equal([...monitor.activeTurns.values()][0].source, 'vscode');
   assert.equal(monitor.snapshot().tasks[0].title, 'MOSS 多任务面板');
   assert.equal(monitor.snapshot().tasks[0].workspace, 'moss');
+  assert.equal(monitor.snapshot().tasks[0].cwd, '/workspace/moss');
   monitor.stop();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });

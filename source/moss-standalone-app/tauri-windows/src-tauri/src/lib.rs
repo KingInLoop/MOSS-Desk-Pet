@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use settings::{Settings, EYE_COLORS, SCALES, TRAY_ICON_MODES};
 use std::{
     path::PathBuf,
+    process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -433,6 +434,12 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
         "显示状态灯",
         settings.show_status_badge,
     )?;
+    let click_usage = checked(
+        app,
+        "toggle:click-pet-for-usage",
+        "单击桌宠查看额度",
+        settings.click_pet_for_usage,
+    )?;
     let login = checked(
         app,
         "toggle:launch-at-login",
@@ -459,6 +466,7 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
     items.push(&always);
     items.push(&notifications);
     items.push(&badge);
+    items.push(&click_usage);
     items.push(&login);
     items.push(&separator_3);
     if context {
@@ -719,6 +727,9 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "toggle:status-badge" => update_settings(app, |settings| {
             settings.show_status_badge = !settings.show_status_badge
         }),
+        "toggle:click-pet-for-usage" => update_settings(app, |settings| {
+            settings.click_pet_for_usage = !settings.click_pet_for_usage
+        }),
         "toggle:launch-at-login" => update_settings(app, |settings| {
             settings.launch_at_login = !settings.launch_at_login
         }),
@@ -789,6 +800,73 @@ fn set_panel_mode(app: AppHandle, mode: String) -> Result<(), String> {
 #[tauri::command]
 fn refresh_usage(app: AppHandle) {
     refresh_usage_now(app);
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenTaskResult {
+    ok: bool,
+    message: Option<String>,
+}
+
+fn encode_uri_path(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.replace('\\', "/").bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/' | b':') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+#[tauri::command]
+fn open_task(app: AppHandle, task_id: String) -> OpenTaskResult {
+    let task = app
+        .state::<AppState>()
+        .runtime
+        .lock()
+        .ok()
+        .and_then(|runtime| {
+            runtime
+                .snapshot
+                .tasks
+                .iter()
+                .find(|task| task.id == task_id)
+                .cloned()
+        });
+    let Some(task) = task else {
+        return OpenTaskResult {
+            ok: false,
+            message: Some("任务已结束或不存在".into()),
+        };
+    };
+    let target = if task.source == "vscode" {
+        task.cwd
+            .as_deref()
+            .map(|cwd| format!("vscode://file/{}", encode_uri_path(cwd)))
+            .unwrap_or_else(|| "vscode://".into())
+    } else {
+        format!("codex://threads/{}", encode_uri_path(&task.id))
+    };
+    match Command::new("explorer.exe").arg(&target).spawn() {
+        Ok(_) => OpenTaskResult {
+            ok: true,
+            message: None,
+        },
+        Err(_) => OpenTaskResult {
+            ok: false,
+            message: Some(
+                if task.source == "vscode" {
+                    "无法唤起 VS Code"
+                } else {
+                    "无法唤起 Codex"
+                }
+                .into(),
+            ),
+        },
+    }
 }
 
 #[tauri::command]
@@ -1011,6 +1089,7 @@ pub fn run() {
             toggle_skin,
             set_details_expanded,
             set_panel_mode,
+            open_task,
             refresh_usage,
             show_context_menu,
             move_pet_by

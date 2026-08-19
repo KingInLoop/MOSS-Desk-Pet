@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   notifications: true,
   launchAtLogin: false,
   showStatusBadge: true,
+  clickPetForUsage: true,
   trayIconMode: 'auto'
 });
 
@@ -32,6 +33,7 @@ function normalizeSettings(value = {}) {
     notifications: value.notifications ?? DEFAULT_SETTINGS.notifications,
     launchAtLogin: value.launchAtLogin ?? DEFAULT_SETTINGS.launchAtLogin,
     showStatusBadge: value.showStatusBadge ?? DEFAULT_SETTINGS.showStatusBadge,
+    clickPetForUsage: value.clickPetForUsage ?? DEFAULT_SETTINGS.clickPetForUsage,
     trayIconMode: normalizeTrayIconMode(value.trayIconMode)
   };
 }

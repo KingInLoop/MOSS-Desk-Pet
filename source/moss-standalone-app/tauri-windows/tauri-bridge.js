@@ -32,5 +32,6 @@ window.mossPet = {
   },
   setDetailsExpanded: (expanded) => invoke('set_details_expanded', { expanded: Boolean(expanded) }),
   setPanelMode: (mode) => invoke('set_panel_mode', { mode }),
+  openTask: (taskId) => invoke('open_task', { taskId }),
   refreshUsage: () => invoke('refresh_usage')
 };

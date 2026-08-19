@@ -10,13 +10,15 @@ test('normalizes invalid settings to safe defaults', () => {
   assert.equal(result.eyeColor, DEFAULT_SETTINGS.eyeColor);
   assert.equal(result.scale, DEFAULT_SETTINGS.scale);
   assert.equal(result.trayIconMode, 'auto');
+  assert.equal(result.clickPetForUsage, true);
 });
 
 test('accepts supported visual settings', () => {
-  const result = normalizeSettings({ skin: 'light', eyeColor: 'cyan', scale: 0.875, notifications: false, trayIconMode: 'light' });
+  const result = normalizeSettings({ skin: 'light', eyeColor: 'cyan', scale: 0.875, notifications: false, clickPetForUsage: false, trayIconMode: 'light' });
   assert.equal(result.skin, 'light');
   assert.equal(result.eyeColor, 'cyan');
   assert.equal(result.scale, 0.875);
   assert.equal(result.notifications, false);
   assert.equal(result.trayIconMode, 'light');
+  assert.equal(result.clickPetForUsage, false);
 });
