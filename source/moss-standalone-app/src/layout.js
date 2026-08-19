@@ -12,7 +12,7 @@ const SCALE_OPTIONS = Object.freeze([
 ]);
 const TASK_PANEL_WIDTH = 280;
 const TASK_PANEL_GAP = 8;
-const TASK_PANEL_HEIGHT = 232;
+const TASK_PANEL_HEIGHT = 304;
 const DEFAULT_PANEL_PLACEMENT = Object.freeze({ horizontal: 'left', vertical: 'up' });
 
 function petDimensions(scale) {

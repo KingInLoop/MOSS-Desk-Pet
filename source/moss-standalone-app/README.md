@@ -9,13 +9,16 @@ MOSS Desk Pet 是一款以《流浪地球》MOSS 为灵感制作的独立桌面�
 
 桌宠本身是独立应用，不要求 Codex Desktop 一直开启。只要 Codex Desktop 或 VS Code Codex 扩展中的任意一个正在执行任务，并写入同一份本地 Codex 会话目录，MOSS 就可以监听状态。
 
-无需 OpenAI API Key，也不依赖远程服务。
+无需单独填写 OpenAI API Key。额度功能复用 Codex 当前登录状态，通过 Codex 官方本地 App Server 查询，不读取 `auth.json`，也不保存访问令牌。
 
 ## 主要功能
 
 - 同时监听 Codex Desktop 与 VS Code Codex 扩展的任务状态。
 - 区分任务运行、正常完成、网络等异常中断和用户取消。
 - 支持同时查看多个正在运行的任务，并可随时展开或收起详情。
+- 单击任务条目可直接跳转到对应的 Codex 对话或 VS Code 工作区。
+- 查看当前 Codex 套餐、多个额度窗口的剩余比例与下次重置时间。
+- 显示近七天 Token 使用条形图；官方数据不可用时会明确标注为本地估算。
 - 提供暗黑、明亮两套皮肤，以及红、琥珀、绿、青、蓝、紫等镜头颜色。
 - 镜头具有发光效果，颜色资源彼此独立，方便后续增加升级色。
 - 支持五档显示大小、始终置顶、系统通知、状态灯和登录时启动。
@@ -87,13 +90,15 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 
 | 操作 | 功能 |
 | --- | --- |
+| 左键单击桌宠 | 查看或收起套餐额度；可在设置中关闭 |
 | 左键拖动桌宠 | 移动悬浮位置 |
 | 右键单击桌宠 | 打开完整设置菜单 |
 | 双击桌宠 | 快速切换暗黑/明亮皮肤 |
 | 点击任务数量按钮 | 展开或收起运行任务详情 |
+| 点击运行任务条目 | 跳转到对应的 Codex 对话或 VS Code 工作区 |
 | 点击系统托盘/菜单栏图标 | 显示、隐藏、设置或退出 MOSS |
 
-详情面板会根据桌宠所在位置自动向上、下、左或右展开，不会改变桌宠原来的屏幕位置。
+详情面板会根据桌宠所在位置自动向上、下、左或右展开，不会改变桌宠原来的屏幕位置。额度每五分钟自动刷新一次，也可以在面板中手动刷新。
 
 ## 设置说明
 
@@ -105,6 +110,7 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 - 始终置顶：让桌宠保持在普通窗口上方；macOS 还支持独立全屏 Space。
 - 任务状态通知：任务完成或异常结束时显示系统通知。
 - 显示状态灯：显示当前任务状态和运行数量。
+- 单击桌宠查看额度：控制桌宠本体的额度面板快捷操作。
 - 登录时启动：登录系统后自动启动桌宠。
 - 任务栏图标：Windows 可选择自动、浅色或深色；macOS 由系统模板图标自动适配菜单栏。
 
@@ -118,14 +124,17 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 - Windows：`%USERPROFILE%\.codex\sessions`
 - 如果设置了 `CODEX_HOME`，则监听 `$CODEX_HOME/sessions`。
 
-应用只解析完成状态所需的本地事件信息：
+应用只解析任务状态和本地趋势所需的事件信息：
 
 - `session_meta`
 - `task_started`
 - `task_complete`
 - `turn_aborted` / `task_cancelled`
+- `token_count`（仅用于官方数据不可用时汇总近七天趋势）
 
 错误内容仅用于在本机判断是否属于网络中断等类别，不会保存错误原文。任务详情会按需显示本地线程标题与工作区名称，但不会复制或保存对话正文、模型回复、提示词或代码内容。子代理内部任务会被忽略，避免重复通知。
+
+套餐额度优先通过短时启动的 `codex app-server` 查询 `account/rateLimits/read` 和 `account/usage/read`；读取完成或超时后立即结束该子进程。应用不会读取、复制或保存 Codex 登录凭据。若当前登录方式不支持官方用量接口，剩余套餐额度会显示为不可用，图表才回退为本地估算，二者不会混淆。
 
 Codex 本地会话格式不是面向第三方应用承诺的稳定 API。如果未来格式发生变化，主要监听逻辑位于 `src/codex-monitor.js` 与 `tauri-windows/src-tauri/src/monitor.rs`。
 
@@ -153,6 +162,10 @@ Codex 本地会话格式不是面向第三方应用承诺的稳定 API。如果�
 ### 没有收到系统通知
 
 确认 MOSS 菜单里的“任务状态通知”已开启，并在 macOS“系统设置 → 通知”或 Windows“设置 → 系统 → 通知”中允许 MOSS 发送通知。
+
+### 套餐额度显示为不可用
+
+确认 Codex Desktop 或 VS Code Codex 扩展已经登录 ChatGPT 账号，并尝试点击额度面板中的“刷新”。API Key 单独登录等部分认证方式不会返回 ChatGPT 套餐额度；此时 MOSS 仍可显示明确标注的本地 Token 趋势。
 
 ## 本地开发
 
@@ -196,6 +209,10 @@ moss-standalone-app/
 ```
 
 Electron 与 Tauri 共享桌宠视觉、CSS、动画配置和交互逻辑，减少两套实现之间的差异。生成的依赖、构建目录和 Tauri 前端不会保留在源码交付包中。
+
+## 开源实现参考
+
+额度模块基于 Codex 官方 App Server 接口实现，并参考了社区项目对短时本地进程、额度窗口分类和隐私边界的处理方式：`timmyagentic/quota-monitor`、`roboticsdao/codex-usage-monitor` 与 `poer2023/CodexScope`。本项目未复制这些项目的界面或源码。
 
 ## 说明
 

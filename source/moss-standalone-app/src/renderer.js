@@ -11,7 +11,13 @@ const taskCount = document.getElementById('task-count');
 const taskPanel = document.getElementById('task-panel');
 const taskList = document.getElementById('task-list');
 const panelSummary = document.getElementById('panel-summary');
+const panelTitle = document.getElementById('panel-title');
 const panelClose = document.getElementById('panel-close');
+const usageView = document.getElementById('usage-view');
+const usageLimits = document.getElementById('usage-limits');
+const usageChart = document.getElementById('usage-chart');
+const usageNote = document.getElementById('usage-note');
+const usageRefresh = document.getElementById('usage-refresh');
 
 const CELL_WIDTH = 192;
 const CELL_HEIGHT = 208;
@@ -28,12 +34,15 @@ let transitionTimer;
 let toastTimer;
 let lookDirection = null;
 let detailsOpen = false;
+let panelMode = 'tasks';
 let taskSnapshot = { activeCount: 0, tasks: [] };
+let usageSnapshot = { status: 'loading', limits: [], dailyUsage: [], message: '正在读取额度…' };
 let dragPointerId = null;
 let dragStarted = false;
 let dragOrigin = null;
 let dragLastPoint = null;
 let dragEndedAt = Number.NEGATIVE_INFINITY;
+let singleClickTimer;
 
 const DRAG_THRESHOLD = 4;
 
@@ -145,6 +154,16 @@ function setDetailsOpen(next, notifyMain = true) {
   if (notifyMain) window.mossPet.setDetailsExpanded(detailsOpen);
 }
 
+function setPanelMode(mode, notifyMain = false) {
+  panelMode = mode === 'usage' ? 'usage' : 'tasks';
+  taskList.hidden = panelMode !== 'tasks';
+  usageView.hidden = panelMode !== 'usage';
+  panelTitle.textContent = panelMode === 'usage' ? '订阅额度' : '正在运行';
+  taskToggle.classList.toggle('active', panelMode === 'tasks' && detailsOpen);
+  if (panelMode === 'tasks') renderTasks(); else renderUsage();
+  if (notifyMain) window.mossPet.setPanelMode(panelMode);
+}
+
 function elapsedLabel(startedAt) {
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(startedAt || Date.now())) / 1000));
   if (elapsedSeconds < 60) return `${elapsedSeconds} 秒`;
@@ -168,6 +187,9 @@ function renderTasks() {
   for (const task of tasks) {
     const item = document.createElement('article');
     item.className = 'task-item';
+    item.tabIndex = 0;
+    item.setAttribute('role', 'button');
+    item.setAttribute('aria-label', `打开任务：${task.title || '未命名对话'}`);
     const dot = document.createElement('span');
     dot.className = 'task-dot';
     const body = document.createElement('div');
@@ -181,8 +203,89 @@ function renderTasks() {
     meta.textContent = `${source} · 运行中 ${elapsedLabel(task.startedAt)}`;
     body.append(title, meta);
     item.append(dot, body);
+    const openTask = async () => {
+      const result = await window.mossPet.openTask(task.id);
+      if (result?.ok) setDetailsOpen(false);
+      else showToast(result?.message || '无法打开对应任务');
+    };
+    item.addEventListener('click', openTask);
+    item.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openTask();
+    });
     taskList.append(item);
   }
+}
+
+function resetLabel(timestamp) {
+  const value = Number(timestamp);
+  if (!value) return '重置时间未知';
+  const date = new Date(value * 1000);
+  const remaining = date.getTime() - Date.now();
+  if (remaining <= 0) return '即将重置';
+  const hours = Math.floor(remaining / 3600000);
+  const days = Math.floor(hours / 24);
+  const time = date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return `${days ? `${days}天 ` : ''}${hours % 24}小时后 · ${time}`;
+}
+
+function compactTokens(tokens) {
+  const value = Number(tokens) || 0;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(value >= 1e7 ? 0 : 1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(value >= 1e4 ? 0 : 1)}K`;
+  return String(value);
+}
+
+function renderUsage() {
+  const limits = Array.isArray(usageSnapshot.limits) ? usageSnapshot.limits : [];
+  const days = Array.isArray(usageSnapshot.dailyUsage) ? usageSnapshot.dailyUsage : [];
+  const sourceLabel = usageSnapshot.source === 'app-server' ? '官方账号数据' : '本地估算';
+  panelSummary.textContent = `${usageSnapshot.planType ? `${String(usageSnapshot.planType).toUpperCase()} · ` : ''}${sourceLabel}`;
+  usageLimits.replaceChildren();
+  if (!limits.length) {
+    const empty = document.createElement('div');
+    empty.className = 'usage-empty';
+    empty.textContent = '暂时无法读取套餐剩余额度';
+    usageLimits.append(empty);
+  }
+  for (const limit of limits.slice(0, 4)) {
+    const item = document.createElement('section');
+    item.className = 'usage-limit';
+    const header = document.createElement('div');
+    header.className = 'usage-limit-header';
+    const label = document.createElement('span');
+    label.textContent = limit.label;
+    const remaining = document.createElement('b');
+    remaining.textContent = `剩余 ${Math.round(limit.remainingPercent)}%`;
+    header.append(label, remaining);
+    const track = document.createElement('div');
+    track.className = 'usage-track';
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.max(0, Math.min(100, limit.remainingPercent))}%`;
+    track.append(fill);
+    const reset = document.createElement('small');
+    reset.textContent = resetLabel(limit.resetsAt);
+    item.append(header, track, reset);
+    usageLimits.append(item);
+  }
+  usageChart.replaceChildren();
+  const maximum = Math.max(1, ...days.map((day) => Number(day.tokens) || 0));
+  for (const day of days) {
+    const column = document.createElement('div');
+    column.className = 'usage-day';
+    column.title = `${day.date}: ${Number(day.tokens || 0).toLocaleString()} tokens`;
+    const value = document.createElement('span');
+    value.textContent = compactTokens(day.tokens);
+    const bar = document.createElement('i');
+    bar.style.height = `${Math.max(day.tokens ? 8 : 2, (Number(day.tokens) || 0) / maximum * 46)}px`;
+    const label = document.createElement('small');
+    label.textContent = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'narrow' });
+    column.append(value, bar, label);
+    usageChart.append(column);
+  }
+  const updated = usageSnapshot.updatedAt ? new Date(usageSnapshot.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+  usageNote.textContent = `${usageSnapshot.message || sourceLabel} · 更新 ${updated}`;
 }
 
 window.mossPet.onSettings((next) => {
@@ -198,6 +301,8 @@ window.mossPet.onTaskSnapshot((snapshot) => {
   taskSnapshot = snapshot;
   renderTasks();
 });
+window.mossPet.onUsageSnapshot((snapshot) => { usageSnapshot = snapshot; renderUsage(); });
+window.mossPet.onPanelMode((mode) => setPanelMode(mode, false));
 window.mossPet.onDetailsExpanded((expanded) => setDetailsOpen(expanded, false));
 window.mossPet.onPanelPlacement((placement = {}) => {
   shell.classList.toggle('panel-right', placement.horizontal === 'right');
@@ -262,18 +367,35 @@ document.addEventListener('contextmenu', (event) => {
 });
 
 pet.addEventListener('dblclick', (event) => {
+  clearTimeout(singleClickTimer);
   event.preventDefault();
   event.stopPropagation();
   if (performance.now() - dragEndedAt < 320) return;
   window.mossPet.toggleSkin();
 });
+pet.addEventListener('click', (event) => {
+  if (event.button !== 0 || event.target.closest('button')) return;
+  if (performance.now() - dragEndedAt < 320 || !settings.clickPetForUsage) return;
+  clearTimeout(singleClickTimer);
+  singleClickTimer = setTimeout(() => {
+    if (detailsOpen && panelMode === 'usage') setDetailsOpen(false);
+    else { setPanelMode('usage', true); setDetailsOpen(true, false); }
+  }, 240);
+});
 taskToggle.addEventListener('click', (event) => {
   event.stopPropagation();
-  setDetailsOpen(!detailsOpen);
+  if (detailsOpen && panelMode === 'tasks') setDetailsOpen(false);
+  else { setPanelMode('tasks', true); setDetailsOpen(true, false); }
 });
+usageRefresh.addEventListener('click', () => { usageNote.textContent = '正在刷新…'; window.mossPet.refreshUsage(); });
 panelClose.addEventListener('click', () => setDetailsOpen(false));
-setInterval(() => { if (detailsOpen) renderTasks(); }, 1000);
+setInterval(() => {
+  if (!detailsOpen) return;
+  if (panelMode === 'tasks') renderTasks();
+  else renderUsage();
+}, 1000);
 renderTasks();
+renderUsage();
 loadAtlas();
 window.mossPet.ready();
 requestAnimationFrame(animationLoop);

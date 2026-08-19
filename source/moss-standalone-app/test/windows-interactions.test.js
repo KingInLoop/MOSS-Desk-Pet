@@ -33,3 +33,22 @@ test('manual pet dragging accepts only left-button movement after a threshold', 
   assert.match(renderer, /addEventListener\('dblclick'/);
   assert.match(renderer, /event\.preventDefault\(\)/);
 });
+
+test('pet body opens usage without a separate quota button and can be disabled', () => {
+  const html = read('src/index.html');
+  const renderer = read('src/renderer.js');
+  const settings = read('src/settings.js');
+  assert.doesNotMatch(html, /id="usage-toggle"/);
+  assert.match(renderer, /!settings\.clickPetForUsage/);
+  assert.match(renderer, /setPanelMode\('usage', true\)/);
+  assert.match(settings, /clickPetForUsage:\s*true/);
+});
+
+test('running tasks are clickable and routed through each native shell', () => {
+  const renderer = read('src/renderer.js');
+  const preload = read('src/preload.js');
+  const bridge = read('tauri-windows/tauri-bridge.js');
+  assert.match(renderer, /window\.mossPet\.openTask\(task\.id\)/);
+  assert.match(preload, /ipcRenderer\.invoke\('open-task'/);
+  assert.match(bridge, /invoke\('open_task'/);
+});

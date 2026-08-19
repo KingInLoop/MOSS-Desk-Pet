@@ -211,6 +211,7 @@ class CodexSessionMonitor extends EventEmitter {
       turnId: task.turnId || null,
       title: resolvedTitle.replace(/\s+/g, ' ').trim().slice(0, 96),
       workspace,
+      cwd: task.cwd || null,
       source: task.source,
       startedAt: task.startedAt || null,
       status: 'running'

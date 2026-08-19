@@ -1,6 +1,6 @@
 {
   "name": "moss-desk-pet",
-  "version": "1.3.5",
+  "version": "1.3.7",
   "description": "A standalone MOSS desktop pet that watches local Codex task lifecycle events.",
   "main": "src/main.js",
   "author": "MOSS Desk Pet",
@@ -13,7 +13,7 @@
     "test:mac-fullscreen": "electron test/macos-fullscreen-level-smoke.cjs",
     "test:mac-fullscreen-integration": "bash test/run-macos-fullscreen-integration.sh",
     "test:tray-icon": "electron test/tray-icon-smoke.cjs",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/codex-monitor.js && node --check src/tray-icons.js && node --check src/window-level.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js && node --check src/codex-monitor.js && node --check src/codex-usage.js && node --check src/tray-icons.js && node --check src/window-level.js",
     "package:mac-arm64": "electron-packager . MOSS-Desk-Pet --platform=darwin --arch=arm64 --out=release --overwrite --prune=false --asar --ignore='^/release($|/)' --ignore='^/test($|/)' --ignore='^/node_modules($|/)' --ignore='^/tauri-windows($|/)' && node scripts/fix-mac-icon.cjs release/MOSS-Desk-Pet-darwin-arm64/MOSS-Desk-Pet.app && node scripts/sign-mac-app.cjs release/MOSS-Desk-Pet-darwin-arm64/MOSS-Desk-Pet.app",
     "package:mac-x64": "electron-packager . MOSS-Desk-Pet --platform=darwin --arch=x64 --out=release --overwrite --prune=false --asar --ignore='^/release($|/)' --ignore='^/test($|/)' --ignore='^/node_modules($|/)' --ignore='^/tauri-windows($|/)' && node scripts/fix-mac-icon.cjs release/MOSS-Desk-Pet-darwin-x64/MOSS-Desk-Pet.app && node scripts/sign-mac-app.cjs release/MOSS-Desk-Pet-darwin-x64/MOSS-Desk-Pet.app",
     "package:win-x64": "electron-packager . MOSS-Desk-Pet --platform=win32 --arch=x64 --out=release --overwrite --prune=false --asar --icon=assets/icons/app.ico --ignore='^/release($|/)' --ignore='^/test($|/)' --ignore='^/node_modules($|/)' --ignore='^/tauri-windows($|/)'"

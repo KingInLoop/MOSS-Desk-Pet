@@ -64,6 +64,8 @@ html, body {
   -webkit-app-region: no-drag;
 }
 
+#task-toggle.active { background: rgb(20 52 65 / 94%); color: #eafcff; }
+
 #task-toggle:hover { background: rgb(20 31 42 / 90%); }
 #task-toggle span { font-size: 16px; transform: translateY(-1px); }
 #app-shell.details-open #task-toggle span { transform: rotate(180deg) translateY(1px); }
@@ -117,15 +119,36 @@ html, body {
   overflow: auto;
 }
 
+#usage-view { height: calc(100% - 52px); padding-top: 8px; overflow: auto; }
+.usage-limit { padding: 4px 3px 6px; }
+.usage-limit-header { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; }
+.usage-limit-header span { overflow: hidden; color: #c8d1d9; text-overflow: ellipsis; white-space: nowrap; }
+.usage-limit-header b { flex: 0 0 auto; color: #72e7f5; font-size: 10px; }
+.usage-track { height: 5px; margin-top: 4px; overflow: hidden; border-radius: 99px; background: rgb(255 255 255 / 10%); }
+.usage-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #00b9d7, #5ae6bc); box-shadow: 0 0 7px rgb(0 217 255 / 36%); }
+.usage-limit small { display: block; margin-top: 3px; color: #7f8d99; font-size: 9px; }
+.usage-empty { padding: 10px 4px; color: #a0abb5; font-size: 11px; }
+.usage-chart-header { display: flex; align-items: center; justify-content: space-between; margin: 4px 3px 1px; color: #aab6c0; font-size: 10px; }
+#usage-refresh { padding: 2px 6px; border: 0; border-radius: 6px; background: rgb(255 255 255 / 8%); color: #aab6c0; font-size: 9px; cursor: pointer; }
+#usage-chart { display: grid; grid-template-columns: repeat(7, 1fr); align-items: end; height: 74px; gap: 3px; padding: 2px 3px 0; }
+.usage-day { display: flex; min-width: 0; height: 100%; flex-direction: column; align-items: center; justify-content: flex-end; }
+.usage-day span { max-width: 100%; overflow: hidden; color: #7f8d99; font-size: 8px; text-overflow: ellipsis; }
+.usage-day i { display: block; width: 13px; min-height: 2px; margin: 2px 0; border-radius: 3px 3px 1px 1px; background: linear-gradient(#55e3f5, #087a9d); }
+.usage-day small { color: #8e9ba7; font-size: 9px; }
+#usage-note { margin: 4px 3px 0; overflow: hidden; color: #71808d; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
 .task-item {
   display: grid;
   grid-template-columns: 7px minmax(0, 1fr);
   gap: 9px;
   padding: 8px 6px;
   border-radius: 10px;
+  cursor: pointer;
+  outline: none;
 }
 
 .task-item + .task-item { border-top: 1px solid rgb(255 255 255 / 7%); }
+.task-item:hover, .task-item:focus-visible { background: rgb(255 255 255 / 8%); }
 .task-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #00d9ff; box-shadow: 0 0 5px #00d9ff; }
 .task-title { overflow: hidden; color: #f6f8fa; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta { margin-top: 3px; color: #91a0ae; font-size: 10px; line-height: 1.3; }

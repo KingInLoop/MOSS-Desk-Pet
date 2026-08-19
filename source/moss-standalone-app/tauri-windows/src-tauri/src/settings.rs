@@ -9,6 +9,10 @@ fn default_tray_icon_mode() -> String {
     "auto".into()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -19,6 +23,8 @@ pub struct Settings {
     pub notifications: bool,
     pub launch_at_login: bool,
     pub show_status_badge: bool,
+    #[serde(default = "default_true")]
+    pub click_pet_for_usage: bool,
     #[serde(default = "default_tray_icon_mode")]
     pub tray_icon_mode: String,
 }
@@ -33,6 +39,7 @@ impl Default for Settings {
             notifications: true,
             launch_at_login: false,
             show_status_badge: true,
+            click_pet_for_usage: true,
             tray_icon_mode: default_tray_icon_mode(),
         }
     }
