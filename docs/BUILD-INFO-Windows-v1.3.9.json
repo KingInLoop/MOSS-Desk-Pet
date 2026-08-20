@@ -1,0 +1,19 @@
+{
+  "name": "MOSS Desk Pet Windows",
+  "version": "1.3.9",
+  "builtAt": "2026-08-20",
+  "packages": ["Tauri x64 NSIS", "Electron x64 portable"],
+  "features": [
+    "registered install-location reuse for upgrades",
+    "one-click close and replace for running Tauri or legacy Electron shells",
+    "Simplified Chinese and English installer messages",
+    "running and recently completed task list"
+  ],
+  "verification": {
+    "electronUnitTests": 35,
+    "tauriUnitTests": 9,
+    "installerSourceTests": "passed",
+    "tauriWindowsCrossBuild": "passed",
+    "archives": "passed"
+  }
+}

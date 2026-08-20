@@ -260,7 +260,7 @@ fn app_server(executable: &Path) -> Result<(Value, Value), String> {
         }
     });
     let input = child.stdin.as_mut().ok_or("无法连接 Codex 输入")?;
-    writeln!(input, "{}", json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"moss-desk-pet","version":"1.3.8"},"capabilities":{}}})).map_err(|e| e.to_string())?;
+    writeln!(input, "{}", json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"moss-desk-pet","version":"1.3.9"},"capabilities":{}}})).map_err(|e| e.to_string())?;
     let started = Instant::now();
     let mut responses = HashMap::new();
     while started.elapsed() < Duration::from_secs(12) {

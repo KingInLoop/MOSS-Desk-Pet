@@ -1,6 +1,6 @@
 {
   "name": "MOSS Desk Pet macOS",
-  "version": "1.3.8",
+  "version": "1.3.9",
   "builtAt": "2026-08-20",
   "packages": ["Apple Silicon arm64", "Intel x64"],
   "features": [
@@ -10,7 +10,7 @@
     "fullscreen-safe native panel and adaptive menu bar icon"
   ],
   "verification": {
-    "unitTests": 34,
+    "unitTests": 35,
     "tauriSharedTests": 9,
     "recentTaskPanelVisualQA": "passed",
     "arm64AdHocSignature": "verified",

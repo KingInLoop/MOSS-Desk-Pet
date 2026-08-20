@@ -71,6 +71,8 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 2. 双击安装并按提示完成安装。
 3. 从开始菜单启动 MOSS Desk Pet。
 
+以后直接运行新版安装包即可升级。安装器会读取旧版本记录并沿用原安装位置；如果检测到 Tauri 版或旧 Electron 版 MOSS 正在运行，会提供“关闭 MOSS 并继续安装”的确认操作，然后替换旧文件。桌宠设置和本地 Codex 数据不会被删除。
+
 安装包目前没有商业代码签名证书。如果 Windows SmartScreen 弹出提示，请确认文件来自本项目交付目录并核对 `SHA256SUMS.txt`，然后选择“更多信息”→“仍要运行”。
 
 ### Windows：Electron 便携版
@@ -80,6 +82,8 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 3. 运行文件夹内的 `MOSS-Desk-Pet.exe`。
 
 不要只把 EXE 单独复制出来；Electron 版需要与压缩包中的其他文件保持在同一目录。
+
+便携版没有安装记录，无法可靠判断用户解压到了哪个任意目录，因此不参与自动覆盖。需要自动识别旧版本和原安装位置时，请使用推荐的 Tauri 安装版。
 
 ## 使用方法
 
