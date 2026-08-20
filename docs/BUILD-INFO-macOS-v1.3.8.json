@@ -1,18 +1,18 @@
 {
   "name": "MOSS Desk Pet macOS",
-  "version": "1.3.7",
-  "builtAt": "2026-08-19",
+  "version": "1.3.8",
+  "builtAt": "2026-08-20",
   "packages": ["Apple Silicon arm64", "Intel x64"],
   "features": [
-    "optional click-pet quota panel shortcut",
-    "clickable running tasks with direct Codex or VS Code navigation",
+    "running and recently completed task list",
+    "five-minute completed-task navigation window",
     "Codex account quota remaining and reset time",
     "fullscreen-safe native panel and adaptive menu bar icon"
   ],
   "verification": {
     "unitTests": 34,
-    "tauriSharedTests": 8,
-    "quotaPanelVisualQA": "passed",
+    "tauriSharedTests": 9,
+    "recentTaskPanelVisualQA": "passed",
     "arm64AdHocSignature": "verified",
     "x64AdHocSignature": "verified",
     "archives": "passed"

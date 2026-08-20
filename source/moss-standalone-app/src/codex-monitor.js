@@ -6,6 +6,8 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
 const DEFAULT_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+const DEFAULT_COMPLETED_RETENTION_MS = 5 * 60 * 1000;
+const MAX_RECENT_COMPLETED = 20;
 const MAX_INITIAL_BYTES = 2 * 1024 * 1024;
 
 function classifyTaskError(error) {
@@ -171,8 +173,11 @@ class CodexSessionMonitor extends EventEmitter {
     this.sessionsRoot = path.join(this.codexHome, 'sessions');
     this.pollInterval = options.pollInterval || 900;
     this.lookbackMs = options.lookbackMs || DEFAULT_LOOKBACK_MS;
+    this.completedRetentionMs = options.completedRetentionMs ?? DEFAULT_COMPLETED_RETENTION_MS;
+    this.now = options.now || Date.now;
     this.fileStates = new Map();
     this.activeTurns = new Map();
+    this.recentCompleted = new Map();
     this.timer = null;
     this.startedAt = 0;
     this.lastSource = null;
@@ -194,28 +199,59 @@ class CodexSessionMonitor extends EventEmitter {
   }
 
   snapshot() {
+    this._pruneRecentCompleted();
+    const activeTasks = [...this.activeTurns.values()].map((task) => this._publicTask(task));
+    const activeIds = new Set(activeTasks.map((task) => task.id));
+    const completedTasks = [...this.recentCompleted.values()]
+      .filter(({ task }) => !activeIds.has(this._taskId(task)))
+      .sort((left, right) => right.completedAtMs - left.completedAtMs)
+      .slice(0, MAX_RECENT_COMPLETED)
+      .map(({ task, completedAt }) => this._publicTask(task, 'completed', completedAt));
     return {
       activeCount: this.activeTurns.size,
       source: this.lastSource,
-      tasks: [...this.activeTurns.values()].map((task) => this._publicTask(task)),
+      tasks: [...activeTasks, ...completedTasks],
+      recentRetentionMs: this.completedRetentionMs,
       codexHome: this.codexHome,
       sessionsRoot: this.sessionsRoot
     };
   }
 
-  _publicTask(task) {
+  _taskId(task) {
+    return task.sessionId || task.turnId || path.basename(task.filePath, '.jsonl');
+  }
+
+  _publicTask(task, status = 'running', completedAt = null) {
     const workspace = task.cwd ? path.basename(task.cwd) : null;
     const resolvedTitle = this.titleIndex?.titleFor?.(task.sessionId) || workspace || '未命名对话';
     return {
-      id: task.sessionId || task.turnId || path.basename(task.filePath, '.jsonl'),
+      id: this._taskId(task),
       turnId: task.turnId || null,
       title: resolvedTitle.replace(/\s+/g, ' ').trim().slice(0, 96),
       workspace,
       cwd: task.cwd || null,
       source: task.source,
       startedAt: task.startedAt || null,
-      status: 'running'
+      status,
+      completedAt
     };
+  }
+
+  _pruneRecentCompleted() {
+    const cutoff = this.now() - this.completedRetentionMs;
+    for (const [key, completed] of this.recentCompleted) {
+      if (completed.completedAtMs < cutoff) this.recentCompleted.delete(key);
+    }
+  }
+
+  _rememberCompleted(turnKey, task, timestamp) {
+    const parsed = Date.parse(timestamp || '');
+    const completedAtMs = Number.isFinite(parsed) ? parsed : this.now();
+    if (completedAtMs < this.now() - this.completedRetentionMs) return null;
+    const completedAt = new Date(completedAtMs).toISOString();
+    this.recentCompleted.set(turnKey, { task, completedAt, completedAtMs });
+    this._pruneRecentCompleted();
+    return completedAt;
   }
 
   _recentFiles() {
@@ -307,14 +343,19 @@ class CodexSessionMonitor extends EventEmitter {
         sessionId: state.sessionId,
         cwd: state.cwd,
         turnId: event.turnId,
-        startedAt: event.timestamp || new Date().toISOString()
+        startedAt: event.timestamp || new Date(this.now()).toISOString()
       };
+      const taskId = this._taskId(task);
+      for (const [key, completed] of this.recentCompleted) {
+        if (this._taskId(completed.task) === taskId) this.recentCompleted.delete(key);
+      }
       this.activeTurns.set(turnKey, task);
       if (shouldEmit) this.emit('task-started', { ...event, ...this.snapshot(), task: this._publicTask(task) });
     } else if (event.kind === 'task-complete') {
       const task = this.activeTurns.get(turnKey);
       this.activeTurns.delete(turnKey);
-      if (shouldEmit) this.emit('task-complete', { ...event, ...this.snapshot(), source: state.source, task: task ? this._publicTask(task) : null });
+      const completedAt = task ? this._rememberCompleted(turnKey, task, event.timestamp) : null;
+      if (shouldEmit) this.emit('task-complete', { ...event, ...this.snapshot(), source: state.source, task: task ? this._publicTask(task, 'completed', completedAt) : null });
     } else if (event.kind === 'task-interrupted') {
       const task = this.activeTurns.get(turnKey);
       this.activeTurns.delete(turnKey);
@@ -330,6 +371,7 @@ class CodexSessionMonitor extends EventEmitter {
 
 module.exports = {
   CodexSessionMonitor,
+  DEFAULT_COMPLETED_RETENTION_MS,
   classifyOriginator,
   classifyTaskError,
   extractCodexEvent,

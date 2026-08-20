@@ -21,6 +21,7 @@ const usageRefresh = document.getElementById('usage-refresh');
 
 const CELL_WIDTH = 192;
 const CELL_HEIGHT = 208;
+const DEFAULT_RECENT_RETENTION_MS = 5 * 60 * 1000;
 const SOURCE_LABELS = { desktop: 'Codex 桌面端', vscode: 'VS Code Codex', codex: 'Codex' };
 const { STATES, stateCell, lookCell } = window.MossAnimationConfig;
 
@@ -158,7 +159,7 @@ function setPanelMode(mode, notifyMain = false) {
   panelMode = mode === 'usage' ? 'usage' : 'tasks';
   taskList.hidden = panelMode !== 'tasks';
   usageView.hidden = panelMode !== 'usage';
-  panelTitle.textContent = panelMode === 'usage' ? '订阅额度' : '正在运行';
+  panelTitle.textContent = panelMode === 'usage' ? '订阅额度' : '任务清单';
   taskToggle.classList.toggle('active', panelMode === 'tasks' && detailsOpen);
   if (panelMode === 'tasks') renderTasks(); else renderUsage();
   if (notifyMain) window.mossPet.setPanelMode(panelMode);
@@ -173,20 +174,31 @@ function elapsedLabel(startedAt) {
 }
 
 function renderTasks() {
-  const tasks = Array.isArray(taskSnapshot.tasks) ? taskSnapshot.tasks : [];
-  taskCount.textContent = String(tasks.length);
-  panelSummary.textContent = `${tasks.length} 个对话`;
+  const retentionMs = Number(taskSnapshot.recentRetentionMs) || DEFAULT_RECENT_RETENTION_MS;
+  const now = Date.now();
+  const tasks = (Array.isArray(taskSnapshot.tasks) ? taskSnapshot.tasks : []).filter((task) => {
+    if (task.status !== 'completed') return true;
+    const completedAt = Date.parse(task.completedAt || '');
+    return Number.isFinite(completedAt) && now - completedAt < retentionMs;
+  });
+  const activeCount = Number(taskSnapshot.activeCount) || tasks.filter((task) => task.status !== 'completed').length;
+  const completedCount = tasks.filter((task) => task.status === 'completed').length;
+  taskCount.textContent = String(activeCount);
+  panelSummary.textContent = completedCount
+    ? `${activeCount} 个运行中 · ${completedCount} 个最近完成`
+    : `${activeCount} 个运行中`;
   taskList.replaceChildren();
   if (!tasks.length) {
     const empty = document.createElement('div');
     empty.className = 'task-empty';
-    empty.textContent = '当前没有正在运行的任务';
+    empty.textContent = '当前没有正在运行或最近完成的任务';
     taskList.append(empty);
     return;
   }
   for (const task of tasks) {
     const item = document.createElement('article');
-    item.className = 'task-item';
+    const completed = task.status === 'completed';
+    item.className = `task-item${completed ? ' completed' : ''}`;
     item.tabIndex = 0;
     item.setAttribute('role', 'button');
     item.setAttribute('aria-label', `打开任务：${task.title || '未命名对话'}`);
@@ -200,7 +212,12 @@ function renderTasks() {
     const meta = document.createElement('div');
     meta.className = 'task-meta';
     const source = SOURCE_LABELS[task.source] || 'Codex';
-    meta.textContent = `${source} · 运行中 ${elapsedLabel(task.startedAt)}`;
+    if (completed) {
+      const elapsed = elapsedLabel(task.completedAt);
+      meta.textContent = `${source} · ${elapsed.startsWith('0 秒') ? '刚刚完成' : `${elapsed}前完成`}`;
+    } else {
+      meta.textContent = `${source} · 运行中 ${elapsedLabel(task.startedAt)}`;
+    }
     body.append(title, meta);
     item.append(dot, body);
     const openTask = async () => {

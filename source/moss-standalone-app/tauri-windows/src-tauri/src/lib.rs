@@ -325,9 +325,9 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
         app,
         "tasks:toggle",
         if context && details_expanded && panel_mode == "tasks" {
-            "收起运行任务".into()
+            "收起任务清单".into()
         } else {
-            format!("查看运行任务（{}）", snapshot.active_count)
+            format!("查看任务清单（{} 个运行中）", snapshot.active_count)
         },
         true,
         None::<&str>,

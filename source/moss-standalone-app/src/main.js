@@ -220,7 +220,7 @@ function rebuildTrayMenu() {
     { label: statusMenuLabel(), enabled: false },
     { type: 'separator' },
     { label: petWindow?.isVisible() ? '隐藏 MOSS' : '显示 MOSS', click: () => petWindow?.isVisible() ? petWindow.hide() : petWindow.showInactive() },
-    { label: `查看运行任务（${status.activeCount || 0}）`, click: () => setPanel('tasks', true) },
+    { label: `查看任务清单（${status.activeCount || 0} 个运行中）`, click: () => setPanel('tasks', true) },
     { label: '查看订阅额度', click: () => setPanel('usage', true) },
     ...settingsMenuItems(),
     { type: 'separator' },
@@ -233,7 +233,7 @@ function showPetContextMenu() {
   const menu = Menu.buildFromTemplate([
     { label: statusMenuLabel(), enabled: false },
     { type: 'separator' },
-    { label: detailsExpanded && panelMode === 'tasks' ? '收起运行任务' : `查看运行任务（${status.activeCount || 0}）`, click: () => setPanel('tasks', !(detailsExpanded && panelMode === 'tasks')) },
+    { label: detailsExpanded && panelMode === 'tasks' ? '收起任务清单' : `查看任务清单（${status.activeCount || 0} 个运行中）`, click: () => setPanel('tasks', !(detailsExpanded && panelMode === 'tasks')) },
     { label: detailsExpanded && panelMode === 'usage' ? '收起订阅额度' : '查看订阅额度', click: () => setPanel('usage', !(detailsExpanded && panelMode === 'usage')) },
     ...settingsMenuItems(),
     { type: 'separator' },
@@ -308,7 +308,8 @@ function uiSnapshot(snapshot = status) {
   return {
     activeCount: snapshot.activeCount || 0,
     source: snapshot.source || null,
-    tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : []
+    tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : [],
+    recentRetentionMs: Number(snapshot.recentRetentionMs) || 5 * 60 * 1000
   };
 }
 

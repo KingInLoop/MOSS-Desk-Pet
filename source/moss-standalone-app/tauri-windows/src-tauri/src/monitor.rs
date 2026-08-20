@@ -18,6 +18,8 @@ use walkdir::WalkDir;
 
 const MAX_INITIAL_BYTES: u64 = 2 * 1024 * 1024;
 const LOOKBACK: Duration = Duration::from_secs(48 * 60 * 60);
+const COMPLETED_RETENTION_MS: i64 = 5 * 60 * 1000;
+const MAX_RECENT_COMPLETED: usize = 20;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +32,7 @@ pub struct PublicTask {
     pub source: String,
     pub started_at: Option<String>,
     pub status: &'static str,
+    pub completed_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -38,6 +41,7 @@ pub struct Snapshot {
     pub active_count: usize,
     pub source: Option<String>,
     pub tasks: Vec<PublicTask>,
+    pub recent_retention_ms: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -88,6 +92,13 @@ struct ActiveTask {
 }
 
 #[derive(Clone, Debug)]
+struct CompletedTask {
+    task: ActiveTask,
+    completed_at: String,
+    completed_at_ms: i64,
+}
+
+#[derive(Clone, Debug)]
 enum ParsedEvent {
     SessionMeta {
         source: String,
@@ -101,6 +112,7 @@ enum ParsedEvent {
     },
     Completed {
         turn_id: Option<String>,
+        timestamp: Option<String>,
     },
     Interrupted {
         turn_id: Option<String>,
@@ -147,6 +159,7 @@ struct Monitor {
     sessions_root: PathBuf,
     files: HashMap<PathBuf, FileState>,
     active: HashMap<String, ActiveTask>,
+    recent_completed: HashMap<String, CompletedTask>,
     last_source: Option<String>,
     titles: TitleIndex,
 }
@@ -159,11 +172,30 @@ impl Monitor {
             codex_home,
             files: HashMap::new(),
             active: HashMap::new(),
+            recent_completed: HashMap::new(),
             last_source: None,
         }
     }
 
-    fn public_task(&mut self, task: &ActiveTask) -> PublicTask {
+    fn task_id(task: &ActiveTask) -> String {
+        task.session_id
+            .clone()
+            .or_else(|| task.turn_id.clone())
+            .unwrap_or_else(|| {
+                task.file_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+    }
+
+    fn public_task(
+        &mut self,
+        task: &ActiveTask,
+        status: &'static str,
+        completed_at: Option<String>,
+    ) -> PublicTask {
         let workspace = task.cwd.as_ref().and_then(|cwd| {
             Path::new(cwd)
                 .file_name()
@@ -177,34 +209,78 @@ impl Monitor {
         title = title.split_whitespace().collect::<Vec<_>>().join(" ");
         title.truncate(96);
         PublicTask {
-            id: task
-                .session_id
-                .clone()
-                .or_else(|| task.turn_id.clone())
-                .unwrap_or_else(|| {
-                    task.file_path
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned()
-                }),
+            id: Self::task_id(task),
             turn_id: task.turn_id.clone(),
             title,
             workspace,
             cwd: task.cwd.clone(),
             source: task.source.clone(),
             started_at: task.started_at.clone(),
-            status: "running",
+            status,
+            completed_at,
         }
     }
 
     fn snapshot(&mut self) -> Snapshot {
-        let tasks = self.active.values().cloned().collect::<Vec<_>>();
+        self.prune_recent_completed();
+        let active = self.active.values().cloned().collect::<Vec<_>>();
+        let active_ids = active
+            .iter()
+            .map(Self::task_id)
+            .collect::<std::collections::HashSet<_>>();
+        let mut completed = self
+            .recent_completed
+            .values()
+            .filter(|entry| !active_ids.contains(&Self::task_id(&entry.task)))
+            .cloned()
+            .collect::<Vec<_>>();
+        completed.sort_by(|left, right| right.completed_at_ms.cmp(&left.completed_at_ms));
+        completed.truncate(MAX_RECENT_COMPLETED);
+        let mut tasks = active
+            .iter()
+            .map(|task| self.public_task(task, "running", None))
+            .collect::<Vec<_>>();
+        tasks.extend(completed.iter().map(|entry| {
+            self.public_task(&entry.task, "completed", Some(entry.completed_at.clone()))
+        }));
         Snapshot {
-            active_count: tasks.len(),
+            active_count: active.len(),
             source: self.last_source.clone(),
-            tasks: tasks.iter().map(|task| self.public_task(task)).collect(),
+            tasks,
+            recent_retention_ms: COMPLETED_RETENTION_MS,
         }
+    }
+
+    fn prune_recent_completed(&mut self) {
+        let cutoff = now_ms() - COMPLETED_RETENTION_MS;
+        self.recent_completed
+            .retain(|_, completed| completed.completed_at_ms >= cutoff);
+    }
+
+    fn remember_completed(
+        &mut self,
+        key: String,
+        task: ActiveTask,
+        timestamp: Option<String>,
+    ) -> String {
+        let completed_at_ms = timestamp
+            .as_deref()
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.timestamp_millis())
+            .unwrap_or_else(now_ms);
+        let completed_at = timestamp.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+        if completed_at_ms >= now_ms() - COMPLETED_RETENTION_MS {
+            self.recent_completed.insert(
+                key,
+                CompletedTask {
+                    task,
+                    completed_at: completed_at.clone(),
+                    completed_at_ms,
+                },
+            );
+            self.prune_recent_completed();
+        }
+        completed_at
     }
 
     fn recent_files(&self) -> Vec<PathBuf> {
@@ -343,7 +419,7 @@ impl Monitor {
         }
         let (turn_id, kind) = match &event {
             ParsedEvent::Started { turn_id, .. } => (turn_id.clone(), "started"),
-            ParsedEvent::Completed { turn_id } => (turn_id.clone(), "completed"),
+            ParsedEvent::Completed { turn_id, .. } => (turn_id.clone(), "completed"),
             ParsedEvent::Interrupted { turn_id, .. } => (turn_id.clone(), "interrupted"),
             ParsedEvent::Cancelled { turn_id } => (turn_id.clone(), "cancelled"),
             ParsedEvent::SessionMeta { .. } => unreachable!(),
@@ -365,9 +441,12 @@ impl Monitor {
                     turn_id,
                     started_at: timestamp,
                 };
+                let task_id = Self::task_id(&task);
+                self.recent_completed
+                    .retain(|_, completed| Self::task_id(&completed.task) != task_id);
                 self.active.insert(key, task.clone());
                 if should_emit {
-                    let public = self.public_task(&task);
+                    let public = self.public_task(&task, "running", None);
                     let snapshot = self.snapshot();
                     emit(MonitorEvent::Started {
                         snapshot,
@@ -376,13 +455,18 @@ impl Monitor {
                     });
                 }
             }
-            ParsedEvent::Completed { .. } => {
-                let task = self.active.remove(&key).map(|task| self.public_task(&task));
+            ParsedEvent::Completed { timestamp, .. } => {
+                let task = self.active.remove(&key);
+                let public = task.map(|task| {
+                    let completed_at =
+                        self.remember_completed(key.clone(), task.clone(), timestamp);
+                    self.public_task(&task, "completed", Some(completed_at))
+                });
                 if should_emit {
                     emit(MonitorEvent::Completed {
                         snapshot: self.snapshot(),
                         source: state.source,
-                        task,
+                        task: public,
                     });
                 }
             }
@@ -390,7 +474,10 @@ impl Monitor {
                 kind: interruption_kind,
                 ..
             } => {
-                let task = self.active.remove(&key).map(|task| self.public_task(&task));
+                let task = self
+                    .active
+                    .remove(&key)
+                    .map(|task| self.public_task(&task, "running", None));
                 if should_emit {
                     emit(MonitorEvent::Interrupted {
                         snapshot: self.snapshot(),
@@ -401,7 +488,10 @@ impl Monitor {
                 }
             }
             ParsedEvent::Cancelled { .. } => {
-                let task = self.active.remove(&key).map(|task| self.public_task(&task));
+                let task = self
+                    .active
+                    .remove(&key)
+                    .map(|task| self.public_task(&task, "running", None));
                 if should_emit {
                     emit(MonitorEvent::Cancelled {
                         snapshot: self.snapshot(),
@@ -418,6 +508,13 @@ impl Monitor {
 
 fn string(value: Option<&Value>) -> Option<String> {
     value.and_then(Value::as_str).map(str::to_owned)
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn source(originator: Option<&str>) -> String {
@@ -466,7 +563,10 @@ fn parse_event(record: &Value) -> Option<ParsedEvent> {
                 kind: classify_error(payload.get("error").unwrap()),
             })
         }
-        "task_complete" => Some(ParsedEvent::Completed { turn_id }),
+        "task_complete" => Some(ParsedEvent::Completed {
+            turn_id,
+            timestamp: string(record.get("timestamp")),
+        }),
         "turn_aborted" | "task_cancelled" => Some(ParsedEvent::Cancelled { turn_id }),
         _ => None,
     }
@@ -595,5 +695,36 @@ mod tests {
             parse_event(&json!({"type":"session_meta","payload":{"source":{"subagent":"x"}}})),
             Some(ParsedEvent::SessionMeta { ignored: true, .. })
         ));
+    }
+
+    #[test]
+    fn recently_completed_tasks_expire_after_five_minutes() {
+        let root = std::env::temp_dir().join("moss-recent-completed-test");
+        let mut monitor = Monitor::new(root.clone());
+        monitor.recent_completed.insert(
+            "task".into(),
+            CompletedTask {
+                task: ActiveTask {
+                    source: "desktop".into(),
+                    file_path: root.join("task.jsonl"),
+                    session_id: Some("thread-1".into()),
+                    cwd: None,
+                    turn_id: Some("turn-1".into()),
+                    started_at: None,
+                },
+                completed_at: chrono::Utc::now().to_rfc3339(),
+                completed_at_ms: now_ms(),
+            },
+        );
+        let snapshot = monitor.snapshot();
+        assert_eq!(snapshot.active_count, 0);
+        assert_eq!(snapshot.tasks.len(), 1);
+        assert_eq!(snapshot.tasks[0].status, "completed");
+        monitor
+            .recent_completed
+            .get_mut("task")
+            .unwrap()
+            .completed_at_ms = now_ms() - COMPLETED_RETENTION_MS - 1;
+        assert!(monitor.snapshot().tasks.is_empty());
     }
 }

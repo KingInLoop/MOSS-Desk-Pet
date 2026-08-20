@@ -150,6 +150,8 @@ html, body {
 .task-item + .task-item { border-top: 1px solid rgb(255 255 255 / 7%); }
 .task-item:hover, .task-item:focus-visible { background: rgb(255 255 255 / 8%); }
 .task-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #00d9ff; box-shadow: 0 0 5px #00d9ff; }
+.task-item.completed .task-dot { background: #36e06f; box-shadow: 0 0 5px #36e06f; }
+.task-item.completed .task-meta { color: #7fb68d; }
 .task-title { overflow: hidden; color: #f6f8fa; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .task-meta { margin-top: 3px; color: #91a0ae; font-size: 10px; line-height: 1.3; }
 .task-empty { padding: 26px 8px; color: #8996a3; font-size: 12px; text-align: center; }
