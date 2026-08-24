@@ -109,7 +109,8 @@ test('emits start and completion for a session created after the watcher starts'
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'moss-monitor-live-'));
   const sessions = path.join(tempRoot, 'sessions', '2026', '08', '05');
   fs.mkdirSync(sessions, { recursive: true });
-  const monitor = new CodexSessionMonitor({ codexHome: tempRoot });
+  let now = Date.parse('2026-08-20T06:00:00Z');
+  const monitor = new CodexSessionMonitor({ codexHome: tempRoot, now: () => now });
   const events = [];
   monitor.on('task-started', (event) => events.push(event.kind));
   monitor.on('task-complete', (event) => events.push(event.kind));
@@ -118,15 +119,21 @@ test('emits start and completion for a session created after the watcher starts'
   const sessionFile = path.join(sessions, 'live.jsonl');
   fs.writeFileSync(sessionFile, [
     JSON.stringify({ type: 'session_meta', payload: { originator: 'Codex Desktop', source: 'vscode' } }),
-    JSON.stringify({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'live-turn' } }),
+    JSON.stringify({ timestamp: '2026-08-20T05:58:00Z', type: 'event_msg', payload: { type: 'task_started', turn_id: 'live-turn' } }),
     ''
   ].join('\n'));
   monitor._scan(false);
-  fs.appendFileSync(sessionFile, `${JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 'live-turn' } })}\n`);
+  fs.appendFileSync(sessionFile, `${JSON.stringify({ timestamp: '2026-08-20T06:00:00Z', type: 'event_msg', payload: { type: 'task_complete', turn_id: 'live-turn' } })}\n`);
   monitor._scan(false);
 
   assert.deepEqual(events, ['task-started', 'task-complete']);
   assert.equal(monitor.snapshot().activeCount, 0);
+  assert.equal(monitor.snapshot().tasks.length, 1);
+  assert.equal(monitor.snapshot().tasks[0].status, 'completed');
+  assert.equal(monitor.snapshot().tasks[0].completedAt, '2026-08-20T06:00:00.000Z');
+  assert.equal(monitor.snapshot().recentRetentionMs, 5 * 60 * 1000);
+  now += 5 * 60 * 1000 + 1;
+  assert.equal(monitor.snapshot().tasks.length, 0);
   monitor.stop();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });

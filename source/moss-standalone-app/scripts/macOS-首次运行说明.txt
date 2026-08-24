@@ -1,4 +1,4 @@
-MOSS Desk Pet v1.3.7 — macOS 首次运行
+MOSS Desk Pet v1.3.9 — macOS 首次运行
 
 1. 请先完整解压 ZIP，不要直接在压缩包预览中运行。
 2. 将 MOSS-Desk-Pet.app 拖入“应用程序”文件夹。

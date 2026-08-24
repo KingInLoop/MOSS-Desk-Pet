@@ -164,7 +164,7 @@ function appServerRead(executable, timeoutMs = REQUEST_TIMEOUT_MS) {
         } catch { /* Ignore non-JSON diagnostics. */ }
       }
     });
-    child.stdin.write(`${JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'moss-desk-pet', version: '1.3.7' }, capabilities: {} } })}\n`);
+    child.stdin.write(`${JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'moss-desk-pet', version: '1.3.9' }, capabilities: {} } })}\n`);
   });
 }
 

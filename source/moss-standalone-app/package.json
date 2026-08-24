@@ -1,6 +1,6 @@
 {
   "name": "moss-desk-pet",
-  "version": "1.3.7",
+  "version": "1.3.9",
   "description": "A standalone MOSS desktop pet that watches local Codex task lifecycle events.",
   "main": "src/main.js",
   "author": "MOSS Desk Pet",

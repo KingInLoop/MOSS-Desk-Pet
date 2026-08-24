@@ -44,11 +44,14 @@ test('pet body opens usage without a separate quota button and can be disabled',
   assert.match(settings, /clickPetForUsage:\s*true/);
 });
 
-test('running tasks are clickable and routed through each native shell', () => {
+test('running and recently completed tasks are clickable and routed through each native shell', () => {
   const renderer = read('src/renderer.js');
   const preload = read('src/preload.js');
   const bridge = read('tauri-windows/tauri-bridge.js');
   assert.match(renderer, /window\.mossPet\.openTask\(task\.id\)/);
   assert.match(preload, /ipcRenderer\.invoke\('open-task'/);
   assert.match(bridge, /invoke\('open_task'/);
+  assert.match(renderer, /task\.status === 'completed'/);
+  assert.match(renderer, /recentRetentionMs/);
+  assert.match(renderer, /最近完成/);
 });
