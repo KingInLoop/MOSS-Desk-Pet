@@ -1,0 +1,21 @@
+{
+  "name": "MOSS Desk Pet macOS",
+  "version": "1.4.0",
+  "builtAt": "2026-10-25",
+  "packages": ["Apple Silicon arm64", "Intel x64"],
+  "features": [
+    "optional four-edge auto-hide with hover restore",
+    "latest Codex single- and multi-bucket quota responses",
+    "Claude Code official status-line quota bridge",
+    "DeepSeek Harness official account balance and local token history",
+    "fullscreen-safe native panel and adaptive menu bar icon"
+  ],
+  "verification": {
+    "unitTests": 39,
+    "tauriSharedTests": 9,
+    "multiProviderUsageVisualQA": "passed",
+    "arm64AdHocSignature": "verified",
+    "x64AdHocSignature": "verified",
+    "archives": "passed"
+  }
+}

@@ -8,6 +8,7 @@ use monitor::{MonitorEvent, PublicTask, Snapshot};
 use serde_json::{json, Value};
 use settings::{Settings, EYE_COLORS, SCALES, TRAY_ICON_MODES};
 use std::{
+    fs,
     path::PathBuf,
     process::Command,
     sync::{
@@ -35,7 +36,25 @@ struct RuntimeState {
     placement: Placement,
     snapshot: Snapshot,
     usage: usage::UsageSnapshot,
+    edge_hide: EdgeHideState,
 }
+
+#[derive(Clone, Copy, Default, PartialEq)]
+enum ScreenEdge { Left, Right, Top, Bottom, #[default] None }
+
+#[derive(Clone, Copy, Default)]
+struct EdgeHideState {
+    edge: ScreenEdge,
+    restored: Option<Rect>,
+    hidden: bool,
+    outside_ticks: u8,
+    generation: u64,
+}
+
+const EDGE_THRESHOLD: f64 = 14.0;
+const EDGE_PEEK: f64 = 22.0;
+const CLAUDE_BRIDGE_MARKER: &str = "moss-claude-usage-capture";
+const CLAUDE_CAPTURE_POWERSHELL: &str = include_str!("../../../scripts/claude-usage-capture.ps1");
 
 struct AppState {
     runtime: Mutex<RuntimeState>,
@@ -440,6 +459,18 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
         "单击桌宠查看额度",
         settings.click_pet_for_usage,
     )?;
+    let edge_hide = checked(
+        app,
+        "toggle:auto-hide-at-screen-edge",
+        "贴边自动收拢",
+        settings.auto_hide_at_screen_edge,
+    )?;
+    let claude_bridge = checked(
+        app,
+        "toggle:claude-usage-bridge",
+        "Claude Code 额度桥接",
+        settings.claude_usage_bridge,
+    )?;
     let login = checked(
         app,
         "toggle:launch-at-login",
@@ -467,6 +498,8 @@ fn build_menu(app: &AppHandle<Wry>, context: bool) -> tauri::Result<Menu<Wry>> {
     items.push(&notifications);
     items.push(&badge);
     items.push(&click_usage);
+    items.push(&edge_hide);
+    items.push(&claude_bridge);
     items.push(&login);
     items.push(&separator_3);
     if context {
@@ -522,6 +555,98 @@ fn logical_window_and_area(window: &WebviewWindow) -> Result<(Rect, Rect), Strin
     ))
 }
 
+fn nearest_edge(bounds: Rect, area: Rect) -> ScreenEdge {
+    let candidates = [
+        (ScreenEdge::Left, (bounds.x - area.x).abs()),
+        (ScreenEdge::Right, (area.x + area.width - bounds.x - bounds.width).abs()),
+        (ScreenEdge::Top, (bounds.y - area.y).abs()),
+        (ScreenEdge::Bottom, (area.y + area.height - bounds.y - bounds.height).abs()),
+    ];
+    candidates.into_iter().min_by(|left, right| left.1.total_cmp(&right.1))
+        .filter(|(_, distance)| *distance <= EDGE_THRESHOLD).map(|(edge, _)| edge).unwrap_or(ScreenEdge::None)
+}
+
+fn snapped(bounds: Rect, area: Rect, edge: ScreenEdge) -> Rect {
+    let mut next = bounds;
+    match edge {
+        ScreenEdge::Left => next.x = area.x,
+        ScreenEdge::Right => next.x = area.x + area.width - bounds.width,
+        ScreenEdge::Top => next.y = area.y,
+        ScreenEdge::Bottom => next.y = area.y + area.height - bounds.height,
+        ScreenEdge::None => {}
+    }
+    next.x = next.x.clamp(area.x, area.x + area.width - bounds.width);
+    next.y = next.y.clamp(area.y, area.y + area.height - bounds.height);
+    next
+}
+
+fn hidden_position(bounds: Rect, area: Rect, edge: ScreenEdge) -> (f64, f64) {
+    match edge {
+        ScreenEdge::Left => (area.x - bounds.width + EDGE_PEEK, bounds.y),
+        ScreenEdge::Right => (area.x + area.width - EDGE_PEEK, bounds.y),
+        ScreenEdge::Top => (bounds.x, area.y - bounds.height + EDGE_PEEK),
+        ScreenEdge::Bottom => (bounds.x, area.y + area.height - EDGE_PEEK),
+        ScreenEdge::None => (bounds.x, bounds.y),
+    }
+}
+
+fn restore_edge(app: &AppHandle) -> Result<(), String> {
+    let restored = {
+        let state = app.state::<AppState>();
+        let mut runtime = state.runtime.lock().map_err(|_| "运行状态锁定失败")?;
+        if !runtime.edge_hide.hidden { return Ok(()); }
+        runtime.edge_hide.hidden = false;
+        runtime.edge_hide.outside_ticks = 0;
+        runtime.edge_hide.restored
+    };
+    if let (Some(window), Some(bounds)) = (app.get_webview_window("main"), restored) {
+        window.set_position(LogicalPosition::new(bounds.x, bounds.y)).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn hide_edge(app: &AppHandle, expected_generation: u64) -> Result<(), String> {
+    let (edge, restored, allowed) = {
+        let state = app.state::<AppState>();
+        let mut runtime = state.runtime.lock().map_err(|_| "运行状态锁定失败")?;
+        let allowed = runtime.settings.auto_hide_at_screen_edge && !runtime.details_expanded
+            && runtime.edge_hide.generation == expected_generation && runtime.edge_hide.edge != ScreenEdge::None;
+        if allowed { runtime.edge_hide.hidden = true; }
+        (runtime.edge_hide.edge, runtime.edge_hide.restored, allowed)
+    };
+    if !allowed { return Ok(()); }
+    let window = app.get_webview_window("main").ok_or("MOSS 窗口不存在")?;
+    let (_, area) = logical_window_and_area(&window)?;
+    if let Some(bounds) = restored {
+        let (x, y) = hidden_position(bounds, area, edge);
+        window.set_position(LogicalPosition::new(x, y)).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn arm_edge(app: &AppHandle) -> Result<(), String> {
+    restore_edge(app)?;
+    let window = app.get_webview_window("main").ok_or("MOSS 窗口不存在")?;
+    let (bounds, area) = logical_window_and_area(&window)?;
+    let edge = nearest_edge(bounds, area);
+    let generation = {
+        let state = app.state::<AppState>();
+        let mut runtime = state.runtime.lock().map_err(|_| "运行状态锁定失败")?;
+        runtime.edge_hide.generation += 1;
+        runtime.edge_hide.edge = edge;
+        runtime.edge_hide.restored = if edge == ScreenEdge::None { None } else { Some(snapped(bounds, area, edge)) };
+        runtime.edge_hide.hidden = false;
+        runtime.edge_hide.outside_ticks = 0;
+        runtime.edge_hide.generation
+    };
+    if edge == ScreenEdge::None { return Ok(()); }
+    let restored = snapped(bounds, area, edge);
+    window.set_position(LogicalPosition::new(restored.x, restored.y)).map_err(|error| error.to_string())?;
+    let next = app.clone();
+    thread::spawn(move || { thread::sleep(Duration::from_millis(700)); let _ = hide_edge(&next, generation); });
+    Ok(())
+}
+
 fn resize_window(
     app: &AppHandle,
     previous_scale: f64,
@@ -569,10 +694,40 @@ fn sync_autostart(app: &AppHandle, enabled: bool) {
     }
 }
 
+fn configure_claude_bridge(enabled: bool) -> Result<(), String> {
+    let home = std::env::var_os("USERPROFILE").map(PathBuf::from).ok_or("找不到用户目录")?;
+    let claude_directory = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home.join(".claude"));
+    let settings_path = claude_directory.join("settings.json");
+    let mut value: Value = fs::read_to_string(&settings_path).ok()
+        .and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_else(|| json!({}));
+    let object = value.as_object_mut().ok_or("Claude Code 设置格式不兼容")?;
+    let existing_command = object.get("statusLine").and_then(|item| item.get("command")).and_then(Value::as_str).unwrap_or("");
+    if enabled && object.contains_key("statusLine") && !existing_command.contains(CLAUDE_BRIDGE_MARKER) {
+        return Err("Claude Code 已有自定义状态栏，MOSS 未覆盖它".into());
+    }
+    if enabled {
+        let helper_directory = home.join(".moss-desk-pet");
+        fs::create_dir_all(&helper_directory).map_err(|error| error.to_string())?;
+        let helper = helper_directory.join(format!("{CLAUDE_BRIDGE_MARKER}.ps1"));
+        fs::write(&helper, CLAUDE_CAPTURE_POWERSHELL).map_err(|error| error.to_string())?;
+        object.insert("statusLine".into(), json!({
+            "type": "command",
+            "command": format!("powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{}\"", helper.display()),
+            "padding": 0
+        }));
+    } else if existing_command.contains(CLAUDE_BRIDGE_MARKER) {
+        object.remove("statusLine");
+    }
+    fs::create_dir_all(&claude_directory).map_err(|error| error.to_string())?;
+    fs::write(settings_path, format!("{}\n", serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?))
+        .map_err(|error| error.to_string())
+}
+
 fn update_settings<F>(app: &AppHandle, update: F) -> Result<(), String>
 where
     F: FnOnce(&mut Settings),
 {
+    restore_edge(app)?;
     let (previous_scale, details_expanded, settings, path) = {
         let state = app.state::<AppState>();
         let mut runtime = state.runtime.lock().map_err(|_| "运行状态锁定失败")?;
@@ -595,12 +750,18 @@ where
         resize_window(app, previous_scale, details_expanded)?;
     }
     sync_autostart(app, settings.launch_at_login);
+    if settings.auto_hide_at_screen_edge { arm_edge(app)?; }
+    else {
+        restore_edge(app)?;
+        if let Ok(mut runtime) = app.state::<AppState>().runtime.lock() { runtime.edge_hide = EdgeHideState::default(); }
+    }
     refresh_tray_icon(app, None)?;
     rebuild_tray(app);
     Ok(())
 }
 
 fn set_details(app: &AppHandle, expanded: bool) -> Result<(), String> {
+    if expanded { restore_edge(app)?; }
     let (previous_expanded, scale) = {
         let state = app.state::<AppState>();
         let mut runtime = state.runtime.lock().map_err(|_| "运行状态锁定失败")?;
@@ -613,6 +774,10 @@ fn set_details(app: &AppHandle, expanded: bool) -> Result<(), String> {
         let _ = window.emit("details-expanded", expanded);
     }
     rebuild_tray(app);
+    if !expanded {
+        let automatic = app.state::<AppState>().runtime.lock().map(|runtime| runtime.settings.auto_hide_at_screen_edge).unwrap_or(false);
+        if automatic { arm_edge(app)?; }
+    }
     Ok(())
 }
 
@@ -730,6 +895,13 @@ fn handle_menu(app: &AppHandle, id: &str) {
         "toggle:click-pet-for-usage" => update_settings(app, |settings| {
             settings.click_pet_for_usage = !settings.click_pet_for_usage
         }),
+        "toggle:auto-hide-at-screen-edge" => update_settings(app, |settings| {
+            settings.auto_hide_at_screen_edge = !settings.auto_hide_at_screen_edge
+        }),
+        "toggle:claude-usage-bridge" => {
+            let enabled = app.state::<AppState>().runtime.lock().map(|runtime| !runtime.settings.claude_usage_bridge).unwrap_or(false);
+            configure_claude_bridge(enabled).and_then(|_| update_settings(app, |settings| settings.claude_usage_bridge = enabled))
+        },
         "toggle:launch-at-login" => update_settings(app, |settings| {
             settings.launch_at_login = !settings.launch_at_login
         }),
@@ -880,6 +1052,13 @@ fn move_pet_by(window: WebviewWindow, delta_x: f64, delta_y: f64) -> Result<(), 
     if !delta_x.is_finite() || !delta_y.is_finite() {
         return Err("无效的拖动距离".into());
     }
+    let app = window.app_handle().clone();
+    restore_edge(&app)?;
+    if let Ok(mut runtime) = app.state::<AppState>().runtime.lock() {
+        runtime.edge_hide.edge = ScreenEdge::None;
+        runtime.edge_hide.restored = None;
+        runtime.edge_hide.generation += 1;
+    }
     let scale = window.scale_factor().map_err(|error| error.to_string())?;
     let position = window
         .outer_position()
@@ -893,6 +1072,9 @@ fn move_pet_by(window: WebviewWindow, delta_x: f64, delta_y: f64) -> Result<(), 
         ))
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+fn finish_pet_move(app: AppHandle) -> Result<(), String> { arm_edge(&app) }
 
 fn start_cursor_tracker(app: AppHandle, stop: Arc<AtomicBool>) {
     thread::spawn(move || {
@@ -919,7 +1101,7 @@ fn start_cursor_tracker(app: AppHandle, stop: Arc<AtomicBool>) {
                 continue;
             };
             let size = size.to_logical::<f64>(scale_factor);
-            let (scale, expanded, placement) = {
+            let (scale, expanded, placement, auto_hide, edge_state) = {
                 let state = app.state::<AppState>();
                 let Ok(runtime) = state.runtime.lock() else {
                     continue;
@@ -928,8 +1110,28 @@ fn start_cursor_tracker(app: AppHandle, stop: Arc<AtomicBool>) {
                     runtime.settings.scale,
                     runtime.details_expanded,
                     runtime.placement,
+                    runtime.settings.auto_hide_at_screen_edge,
+                    runtime.edge_hide,
                 )
             };
+            if auto_hide && !expanded && edge_state.edge != ScreenEdge::None {
+                let inside = cursor.x >= position.x && cursor.x < position.x + size.width
+                    && cursor.y >= position.y && cursor.y < position.y + size.height;
+                if edge_state.hidden && inside {
+                    let _ = restore_edge(&app);
+                    continue;
+                }
+                if !edge_state.hidden {
+                    let mut should_hide = false;
+                    let mut generation = edge_state.generation;
+                    if let Ok(mut runtime) = app.state::<AppState>().runtime.lock() {
+                        runtime.edge_hide.outside_ticks = if inside { 0 } else { runtime.edge_hide.outside_ticks.saturating_add(1) };
+                        should_hide = runtime.edge_hide.outside_ticks >= 4;
+                        generation = runtime.edge_hide.generation;
+                    }
+                    if should_hide { let _ = hide_edge(&app, generation); continue; }
+                }
+            }
             let pet = pet_bounds(
                 Rect {
                     x: position.x,
@@ -1003,6 +1205,7 @@ pub fn run() {
                     placement: Placement::default(),
                     snapshot: Snapshot::default(),
                     usage: usage::UsageSnapshot::default(),
+                    edge_hide: EdgeHideState::default(),
                 }),
                 stop: stop.clone(),
             });
@@ -1093,6 +1296,7 @@ pub fn run() {
             refresh_usage,
             show_context_menu,
             move_pet_by
+            ,finish_pet_move
         ])
         .build(tauri::generate_context!())
         .expect("error while building MOSS Tauri application")

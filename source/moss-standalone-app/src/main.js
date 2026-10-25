@@ -17,6 +17,7 @@ const {
 const { CodexSessionMonitor } = require('./codex-monitor');
 const { CodexUsageMonitor } = require('./codex-usage');
 const { readSettings, writeSettings } = require('./settings');
+const { containsPoint, hiddenBounds, nearestEdge, snappedBounds } = require('./edge-hide');
 const { resolveTrayIconMode, usesSystemTemplateIcon } = require('./tray-icons');
 const {
   applyAlwaysOnTop,
@@ -43,6 +44,8 @@ let panelMode = 'tasks';
 let panelPlacement = { ...DEFAULT_PANEL_PLACEMENT };
 let status = { activeCount: 0, source: null, tasks: [] };
 let usageSnapshot = { status: 'loading', source: null, updatedAt: null, planType: null, limits: [], dailyUsage: [], message: '正在读取额度…' };
+let edgeHide = { edge: null, hidden: false, restoredBounds: null, timer: null };
+const CLAUDE_BRIDGE_MARKER = 'moss-claude-usage-capture';
 
 const SOURCE_LABELS = {
   desktop: 'Codex 桌面端',
@@ -70,6 +73,49 @@ function resizePetWindow(previousScale = settings.scale, previousExpanded = deta
   panelPlacement = layout.placement;
   petWindow.setBounds(layout.bounds, false);
   petWindow.webContents.send('panel-placement', panelPlacement);
+}
+
+function cancelEdgeHideTimer() {
+  if (edgeHide.timer) clearTimeout(edgeHide.timer);
+  edgeHide.timer = null;
+}
+
+function restoreFromEdge() {
+  cancelEdgeHideTimer();
+  if (!edgeHide.hidden || !edgeHide.restoredBounds || !petWindow || petWindow.isDestroyed()) return;
+  petWindow.setBounds(edgeHide.restoredBounds, false);
+  edgeHide.hidden = false;
+}
+
+function hideAtArmedEdge() {
+  cancelEdgeHideTimer();
+  if (!settings.autoHideAtScreenEdge || detailsExpanded || edgeHide.hidden || !edgeHide.edge
+    || !edgeHide.restoredBounds || !petWindow || petWindow.isDestroyed()) return;
+  const area = screen.getDisplayMatching(edgeHide.restoredBounds).workArea;
+  petWindow.setBounds(hiddenBounds(edgeHide.restoredBounds, area, edgeHide.edge), false);
+  edgeHide.hidden = true;
+}
+
+function scheduleEdgeHide(delay = 700) {
+  if (!settings.autoHideAtScreenEdge || detailsExpanded || !edgeHide.edge) return;
+  if (edgeHide.timer) return;
+  edgeHide.timer = setTimeout(hideAtArmedEdge, delay);
+}
+
+function armEdgeHideFromCurrentBounds() {
+  if (!settings.autoHideAtScreenEdge || detailsExpanded || !petWindow || petWindow.isDestroyed()) return;
+  restoreFromEdge();
+  const bounds = petWindow.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const edge = nearestEdge(bounds, area);
+  if (!edge) {
+    edgeHide = { edge: null, hidden: false, restoredBounds: null, timer: null };
+    return;
+  }
+  const restoredBounds = snappedBounds(bounds, area, edge);
+  petWindow.setBounds(restoredBounds, false);
+  edgeHide = { edge, hidden: false, restoredBounds, timer: null };
+  scheduleEdgeHide();
 }
 
 function createPetWindow() {
@@ -148,13 +194,62 @@ function createPetWindow() {
   });
 }
 
+function configureClaudeUsageBridge(enabled) {
+  const claudeDirectory = process.env.CLAUDE_CONFIG_DIR || path.join(app.getPath('home'), '.claude');
+  const claudeSettingsPath = path.join(claudeDirectory, 'settings.json');
+  let claudeSettings = {};
+  try { claudeSettings = JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf8')); } catch { /* New Claude Code setup. */ }
+  const existing = claudeSettings.statusLine;
+  const existingCommand = typeof existing?.command === 'string' ? existing.command : '';
+  if (enabled && existing && !existingCommand.includes(CLAUDE_BRIDGE_MARKER)) {
+    return { ok: false, message: 'Claude Code 已有自定义状态栏，MOSS 未覆盖它' };
+  }
+  if (!enabled) {
+    if (existingCommand.includes(CLAUDE_BRIDGE_MARKER)) delete claudeSettings.statusLine;
+  } else {
+    const helperDirectory = path.join(app.getPath('home'), '.moss-desk-pet');
+    fs.mkdirSync(helperDirectory, { recursive: true });
+    const extension = process.platform === 'win32' ? 'ps1' : 'js';
+    const helperPath = path.join(helperDirectory, `${CLAUDE_BRIDGE_MARKER}.${extension}`);
+    fs.copyFileSync(path.join(app.getAppPath(), 'scripts', `claude-usage-capture.${extension}`), helperPath);
+    const command = process.platform === 'win32'
+      ? `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${helperPath}"`
+      : `/usr/bin/osascript -l JavaScript "${helperPath}"`;
+    claudeSettings.statusLine = { type: 'command', command, padding: 0 };
+  }
+  fs.mkdirSync(claudeDirectory, { recursive: true });
+  fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(claudeSettings, null, 2)}\n`);
+  return { ok: true };
+}
+
 function saveAndApply(next) {
+  if (Object.prototype.hasOwnProperty.call(next, 'scale')) restoreFromEdge();
   const previousScale = settings.scale;
-  settings = writeSettings(app.getPath('userData'), { ...settings, ...next });
+  let applied = { ...next };
+  if (Object.prototype.hasOwnProperty.call(next, 'claudeUsageBridge')) {
+    try {
+      const result = configureClaudeUsageBridge(Boolean(next.claudeUsageBridge));
+      if (!result.ok) {
+        applied = { ...applied, claudeUsageBridge: false };
+        showNotification('MOSS：Claude 额度桥接未启用', result.message);
+      }
+    } catch (error) {
+      applied = { ...applied, claudeUsageBridge: false };
+      showNotification('MOSS：Claude 额度桥接未启用', error.message);
+    }
+  }
+  settings = writeSettings(app.getPath('userData'), { ...settings, ...applied });
   if (Object.prototype.hasOwnProperty.call(next, 'alwaysOnTop')) {
     applyAlwaysOnTop(petWindow, settings.alwaysOnTop);
   }
   if (Object.prototype.hasOwnProperty.call(next, 'scale')) resizePetWindow(previousScale, detailsExpanded);
+  if (Object.prototype.hasOwnProperty.call(next, 'autoHideAtScreenEdge')) {
+    if (settings.autoHideAtScreenEdge) armEdgeHideFromCurrentBounds();
+    else {
+      restoreFromEdge();
+      edgeHide = { edge: null, hidden: false, restoredBounds: null, timer: null };
+    }
+  }
   if (next.launchAtLogin !== undefined && app.isPackaged) {
     app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin, openAsHidden: true });
   }
@@ -203,6 +298,8 @@ function settingsMenuItems() {
     checkedMenu('任务状态通知', settings.notifications, () => saveAndApply({ notifications: !settings.notifications })),
     checkedMenu('显示状态灯', settings.showStatusBadge, () => saveAndApply({ showStatusBadge: !settings.showStatusBadge })),
     checkedMenu('单击桌宠查看额度', settings.clickPetForUsage, () => saveAndApply({ clickPetForUsage: !settings.clickPetForUsage })),
+    checkedMenu('贴边自动收拢', settings.autoHideAtScreenEdge, () => saveAndApply({ autoHideAtScreenEdge: !settings.autoHideAtScreenEdge })),
+    checkedMenu('Claude Code 额度桥接', settings.claudeUsageBridge, () => saveAndApply({ claudeUsageBridge: !settings.claudeUsageBridge })),
     checkedMenu('登录时启动', settings.launchAtLogin, () => saveAndApply({ launchAtLogin: !settings.launchAtLogin }))
   ];
 }
@@ -340,11 +437,13 @@ async function openTask(taskId) {
 }
 
 function setDetailsExpanded(next) {
+  if (next) restoreFromEdge();
   const previousExpanded = detailsExpanded;
   detailsExpanded = Boolean(next);
   resizePetWindow(settings.scale, previousExpanded);
   petWindow?.webContents.send('details-expanded', detailsExpanded);
   rebuildTrayMenu();
+  if (!detailsExpanded && edgeHide.edge) scheduleEdgeHide(900);
 }
 
 function setPanel(mode, expanded = true) {
@@ -408,6 +507,14 @@ function startCursorTracking() {
     if (!petWindow || petWindow.isDestroyed() || !petWindow.isVisible()) return;
     const cursor = screen.getCursorScreenPoint();
     const bounds = petWindow.getBounds();
+    if (settings.autoHideAtScreenEdge && edgeHide.edge && !detailsExpanded) {
+      if (edgeHide.hidden && containsPoint(bounds, cursor)) {
+        restoreFromEdge();
+      } else if (!edgeHide.hidden && edgeHide.restoredBounds) {
+        if (containsPoint(bounds, cursor)) cancelEdgeHideTimer();
+        else scheduleEdgeHide();
+      }
+    }
     const pet = petBoundsFromWindow(bounds, settings.scale, detailsExpanded, panelPlacement);
     const center = {
       x: pet.x + pet.width / 2,
@@ -442,12 +549,18 @@ ipcMain.on('move-pet-by', (event, delta = {}) => {
   const deltaX = Number(delta.deltaX);
   const deltaY = Number(delta.deltaY);
   if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+  restoreFromEdge();
+  edgeHide.edge = null;
+  edgeHide.restoredBounds = null;
   const [x, y] = petWindow.getPosition();
   petWindow.setPosition(
     x + Math.max(-500, Math.min(500, Math.round(deltaX))),
     y + Math.max(-500, Math.min(500, Math.round(deltaY))),
     false
   );
+});
+ipcMain.on('finish-pet-move', (event) => {
+  if (event.sender === petWindow?.webContents) armEdgeHideFromCurrentBounds();
 });
 ipcMain.on('set-details-expanded', (_event, expanded) => setDetailsExpanded(expanded));
 ipcMain.on('set-panel-mode', (_event, mode) => setPanel(mode, true));

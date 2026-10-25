@@ -25,6 +25,10 @@ pub struct Settings {
     pub show_status_badge: bool,
     #[serde(default = "default_true")]
     pub click_pet_for_usage: bool,
+    #[serde(default)]
+    pub auto_hide_at_screen_edge: bool,
+    #[serde(default)]
+    pub claude_usage_bridge: bool,
     #[serde(default = "default_tray_icon_mode")]
     pub tray_icon_mode: String,
 }
@@ -40,6 +44,8 @@ impl Default for Settings {
             launch_at_login: false,
             show_status_badge: true,
             click_pet_for_usage: true,
+            auto_hide_at_screen_edge: false,
+            claude_usage_bridge: false,
             tray_icon_mode: default_tray_icon_mode(),
         }
     }

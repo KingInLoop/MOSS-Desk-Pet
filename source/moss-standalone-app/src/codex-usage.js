@@ -40,8 +40,10 @@ function windowLabel(minutes) {
 }
 
 function normalizeLimits(rateLimits = {}) {
+  const single = rateLimits.rateLimits || rateLimits.rate_limits;
   const buckets = rateLimits.rateLimitsByLimitId || rateLimits.rate_limits_by_limit_id || {};
   const entries = Object.entries(buckets);
+  if (!entries.length && (single?.primary || single?.secondary)) entries.push([single.limitId || single.limit_id || 'codex', single]);
   if (!entries.length && (rateLimits.primary || rateLimits.secondary)) entries.push(['codex', rateLimits]);
   const limits = [];
   for (const [id, bucket] of entries) {
@@ -78,6 +80,10 @@ function normalizeUsage(rateLimits, usage, now = new Date()) {
     limits, dailyUsage: sevenDaySeries(dailyBuckets, now),
     message: limits.length ? null : '当前登录方式未提供套餐额度'
   };
+}
+
+function unavailableProvider(id, name, message, dailyUsage = sevenDaySeries([], new Date())) {
+  return { id, name, status: 'unavailable', source: 'local', updatedAt: new Date().toISOString(), planType: null, limits: [], balances: [], dailyUsage, message };
 }
 
 function executableCandidates(environment = process.env, platform = process.platform, home = os.homedir()) {
@@ -138,7 +144,7 @@ function appServerRead(executable, timeoutMs = REQUEST_TIMEOUT_MS) {
       clearTimeout(timer);
       child.kill();
       if (error) reject(error);
-      else resolve({ rateLimits: responses.get(2), usage: responses.get(3) });
+      else resolve({ rateLimits: responses.get(2), usage: responses.get(3) || {} });
     };
     const timer = setTimeout(() => finish(new Error('读取额度超时')), timeoutMs);
     child.once('error', (error) => finish(error));
@@ -156,15 +162,18 @@ function appServerRead(executable, timeoutMs = REQUEST_TIMEOUT_MS) {
             child.stdin.write(`${JSON.stringify({ method: 'initialized', params: {} })}\n`);
             child.stdin.write(`${JSON.stringify({ id: 2, method: 'account/rateLimits/read', params: {} })}\n`);
             child.stdin.write(`${JSON.stringify({ id: 3, method: 'account/usage/read', params: {} })}\n`);
-          } else if (message.id === 2 || message.id === 3) {
+          } else if (message.id === 2) {
             if (message.error) return finish(new Error(message.error.message || 'Codex 额度服务不可用'));
-            responses.set(message.id, message.result || {});
-            if (responses.has(2) && responses.has(3)) finish();
+            responses.set(2, message.result || {});
+            if (responses.has(3)) finish();
+          } else if (message.id === 3) {
+            responses.set(3, message.error ? {} : (message.result || {}));
+            if (responses.has(2)) finish();
           }
         } catch { /* Ignore non-JSON diagnostics. */ }
       }
     });
-    child.stdin.write(`${JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'moss-desk-pet', version: '1.3.9' }, capabilities: {} } })}\n`);
+    child.stdin.write(`${JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'moss_desk_pet', title: 'MOSS Desk Pet', version: '1.4.0' }, capabilities: {} } })}\n`);
   });
 }
 
@@ -204,12 +213,176 @@ async function readCodexUsage(now = new Date()) {
   if (executable) {
     try {
       const { rateLimits, usage } = await appServerRead(executable);
-      return normalizeUsage(rateLimits, usage, now);
+      return { id: 'codex', name: 'ChatGPT / Codex', balances: [], ...normalizeUsage(rateLimits, usage, now) };
     } catch (error) {
-      return { status: 'unavailable', source: 'local', updatedAt: now.toISOString(), planType: null, limits: [], dailyUsage: localDailyUsage(now), message: `官方额度暂不可用：${error.message}` };
+      return { ...unavailableProvider('codex', 'ChatGPT / Codex', `官方额度暂不可用：${error.message}`, localDailyUsage(now)), updatedAt: now.toISOString() };
     }
   }
-  return { status: 'unavailable', source: 'local', updatedAt: now.toISOString(), planType: null, limits: [], dailyUsage: localDailyUsage(now), message: '未找到 Codex 客户端或命令行程序' };
+  return { ...unavailableProvider('codex', 'ChatGPT / Codex', '未找到 Codex 客户端或命令行程序', localDailyUsage(now)), updatedAt: now.toISOString() };
+}
+
+function findNestedRateLimits(value, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 7) return null;
+  const direct = value.rate_limits || value.rateLimits;
+  if (direct?.five_hour || direct?.fiveHour || direct?.seven_day || direct?.sevenDay) return direct;
+  for (const child of Object.values(value)) {
+    const found = findNestedRateLimits(child, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function claudeLimits(raw = {}) {
+  const output = [];
+  for (const [id, label, duration] of [['five_hour', 'Claude · 5 小时额度', 300], ['seven_day', 'Claude · 每周额度', 10080]]) {
+    const camel = id === 'five_hour' ? 'fiveHour' : 'sevenDay';
+    const value = raw[id] || raw[camel];
+    if (!value) continue;
+    const used = Math.max(0, Math.min(100, Number(value.used_percentage ?? value.usedPercent) || 0));
+    output.push({ id: `claude:${id}`, name: 'Claude', label, usedPercent: used, remainingPercent: 100 - used, windowDurationMins: duration, resetsAt: Number(value.resets_at ?? value.resetsAt) || null });
+  }
+  return output;
+}
+
+function recentStructuredFiles(root, depth = 0, output = []) {
+  if (depth > 5 || output.length > 1200) return output;
+  let entries = [];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return output; }
+  for (const entry of entries) {
+    const target = path.join(root, entry.name);
+    if (entry.isDirectory()) recentStructuredFiles(target, depth + 1, output);
+    else if (entry.isFile() && /\.(json|jsonl)$/i.test(entry.name)) {
+      try {
+        const stat = fs.statSync(target);
+        if (stat.size <= 2 * 1024 * 1024) output.push({ target, mtimeMs: stat.mtimeMs });
+      } catch { /* File may disappear while a client updates it. */ }
+    }
+  }
+  return output;
+}
+
+function readClaudeRateLimits(home = os.homedir()) {
+  const explicit = process.env.CLAUDE_USAGE_SNAPSHOT;
+  const roots = [explicit, path.join(home, '.claude', 'moss-usage.json')].filter(Boolean);
+  const discovered = recentStructuredFiles(path.join(home, '.claude')).sort((a, b) => b.mtimeMs - a.mtimeMs).map((item) => item.target);
+  for (const file of [...roots, ...discovered]) {
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      const candidates = file.endsWith('.jsonl') ? content.trim().split('\n').reverse().slice(0, 80) : [content];
+      for (const candidate of candidates) {
+        const found = findNestedRateLimits(JSON.parse(candidate));
+        if (found) return found;
+      }
+    } catch { /* Ignore partial live files and unrelated JSON. */ }
+  }
+  return null;
+}
+
+function localClaudeDaily(now = new Date()) {
+  const buckets = [];
+  for (const { target } of recentStructuredFiles(path.join(os.homedir(), '.claude', 'projects'))) {
+    if (!target.endsWith('.jsonl')) continue;
+    try {
+      for (const line of fs.readFileSync(target, 'utf8').split('\n')) {
+        if (!line.includes('usage')) continue;
+        const record = JSON.parse(line);
+        const usage = record?.message?.usage || record?.usage;
+        const tokens = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
+          .reduce((sum, key) => sum + (Number(usage?.[key]) || 0), 0);
+        if (tokens > 0) buckets.push({ startDate: record.timestamp, tokens });
+      }
+    } catch { /* Ignore live transcript tails. */ }
+  }
+  return sevenDaySeries(buckets, now);
+}
+
+async function readClaudeUsage(now = new Date()) {
+  const limits = claudeLimits(readClaudeRateLimits() || {});
+  return {
+    id: 'claude', name: 'Claude', status: limits.length ? 'ok' : 'unavailable', source: limits.length ? 'claude-statusline' : 'local',
+    updatedAt: now.toISOString(), planType: null, limits, balances: [], dailyUsage: localClaudeDaily(now),
+    message: limits.length ? '来自 Claude 官方状态栏的最近额度快照' : 'Claude 桌面端暂无公开额度接口；可读取 Claude Code 官方状态栏快照'
+  };
+}
+
+function parseYamlScalar(value) {
+  const trimmed = String(value || '').trim();
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+function deepSeekCredential(home = os.homedir()) {
+  const file = path.join(process.env.DSH_HOME || path.join(home, '.dsh'), '.credentials.yaml');
+  let inRecord = false;
+  let token = null;
+  let issuer = null;
+  try {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (/^  deepseek-account-platform\/default:\s*$/.test(line)) { inRecord = true; continue; }
+      if (inRecord && /^  \S/.test(line)) break;
+      if (!inRecord) continue;
+      const match = /^\s{6}(token|issuer):\s*(.+?)\s*$/.exec(line);
+      if (match?.[1] === 'token') token = parseYamlScalar(match[2]);
+      if (match?.[1] === 'issuer') issuer = parseYamlScalar(match[2]);
+    }
+  } catch { return null; }
+  try {
+    const url = new URL(issuer);
+    if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/') return null;
+  } catch { return null; }
+  return token && issuer ? { token, issuer: issuer.replace(/\/$/, '') } : null;
+}
+
+function deepSeekDaily(now = new Date()) {
+  const root = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'storages', 'session_projcache', 'sessions');
+  const buckets = [];
+  let files = [];
+  try { files = fs.readdirSync(root).filter((name) => name.endsWith('.json')); } catch { return sevenDaySeries([], now); }
+  for (const name of files) {
+    try {
+      const record = JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'))?.record;
+      const totals = record?.rows?.tokenUsage?.val?.totals || {};
+      const tokens = ['uncachedInputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'].reduce((sum, key) => sum + (Number(totals[key]) || 0), 0);
+      if (tokens > 0) buckets.push({ startDate: new Date(Number(record?.identity?.createdAt) || 0), tokens });
+    } catch { /* Ignore sessions being compacted. */ }
+  }
+  return sevenDaySeries(buckets, now);
+}
+
+async function readDeepSeekUsage(now = new Date()) {
+  const credential = deepSeekCredential();
+  const fallback = unavailableProvider('deepseek', 'DeepSeek Harness', '未找到 DeepSeek Harness 登录信息', deepSeekDaily(now));
+  if (!credential) return { ...fallback, updatedAt: now.toISOString() };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${credential.issuer}/api/v0/users/get_user_summary`, {
+      headers: { 'x-dsh-auth-token': credential.token, 'x-client-platform': process.platform === 'win32' ? 'desktop-win' : 'desktop-mac', 'x-client-version': '1.4.0', 'x-client-locale': 'zh_CN' },
+      redirect: 'error', signal: controller.signal
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? '登录已过期' : `服务返回 ${response.status}`);
+    const envelope = await response.json();
+    const data = envelope?.code === 0 && envelope?.data?.biz_code === 0 ? envelope.data.biz_data : null;
+    if (!data) throw new Error('余额响应格式不兼容');
+    const currencies = new Map();
+    for (const [kind, rows] of [['normal', data.normal_wallets], ['bonus', data.bonus_wallets]]) {
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const current = currencies.get(row.currency) || { currency: row.currency, normal: 0, bonus: 0 };
+        current[kind] += Number(row.balance) || 0;
+        currencies.set(row.currency, current);
+      }
+    }
+    const balances = [...currencies.values()].map((item) => ({ ...item, total: item.normal + item.bonus }));
+    return { id: 'deepseek', name: 'DeepSeek Harness', status: balances.length ? 'ok' : 'unavailable', source: 'deepseek-account', updatedAt: now.toISOString(), planType: null, limits: [], balances, dailyUsage: deepSeekDaily(now), message: balances.length ? '来自 DeepSeek Harness 官方账户余额' : '账户未返回余额' };
+  } catch (error) {
+    return { ...fallback, updatedAt: now.toISOString(), message: `DeepSeek 余额暂不可用：${error.name === 'AbortError' ? '读取超时' : error.message}` };
+  } finally { clearTimeout(timer); }
+}
+
+async function readAllUsage(now = new Date()) {
+  const providers = await Promise.all([readCodexUsage(now), readClaudeUsage(now), readDeepSeekUsage(now)]);
+  const primary = providers[0];
+  return { ...primary, providers };
 }
 
 class CodexUsageMonitor {
@@ -218,9 +391,9 @@ class CodexUsageMonitor {
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
   refresh() {
     if (this.refreshing) return this.refreshing;
-    this.refreshing = readCodexUsage().then((snapshot) => { this.callback(snapshot); return snapshot; }).finally(() => { this.refreshing = null; });
+    this.refreshing = readAllUsage().then((snapshot) => { this.callback(snapshot); return snapshot; }).finally(() => { this.refreshing = null; });
     return this.refreshing;
   }
 }
 
-module.exports = { CodexUsageMonitor, executableCandidates, normalizeLimits, normalizeUsage, readCodexUsage, sevenDaySeries, windowLabel };
+module.exports = { CodexUsageMonitor, claudeLimits, executableCandidates, normalizeLimits, normalizeUsage, readAllUsage, readClaudeUsage, readCodexUsage, readDeepSeekUsage, sevenDaySeries, windowLabel };

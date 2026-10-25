@@ -20,7 +20,7 @@ MOSS-Desk-Pet/
 │   └── Windows/           # Tauri 安装版与 Electron 便携版
 ├── source/
 │   ├── moss-standalone-app/          # 可直接继续开发的完整源码
-│   └── MOSS-Desk-Pet-source-v1.3.9.zip
+│   └── MOSS-Desk-Pet-source-v1.4.0.zip
 ├── docs/                  # 设定图、动画预览、首次运行和构建信息
 ├── README.md              # 总体介绍、安装与使用说明
 ├── LICENSE
@@ -33,11 +33,13 @@ MOSS-Desk-Pet/
 - 区分任务运行、正常完成、网络等异常中断和用户取消。
 - 任务清单同时显示运行中的任务和最近五分钟内完成的任务，并可随时展开或收起。
 - 单击任务条目可直接跳转到对应的 Codex 对话或 VS Code 工作区。
-- 查看当前 Codex 套餐、多个额度窗口的剩余比例与下次重置时间。
-- 显示近七天 Token 使用条形图；官方数据不可用时会明确标注为本地估算。
+- 查看 ChatGPT/Codex 套餐、多个额度窗口的剩余比例与下次重置时间；兼容 App Server 的单额度桶与多额度桶返回格式。
+- 额度面板可在 ChatGPT/Codex、Claude 和 DeepSeek Harness 之间切换，并分别显示可用的订阅窗口、账户余额与近七天 Token 趋势。
+- 显示近七天 Token 使用条形图；某个服务的官方数据不可用时只降级该服务，并明确标注为本地估算。
 - 提供暗黑、明亮两套皮肤，以及红、琥珀、绿、青、蓝、紫等镜头颜色。
 - 镜头具有发光效果，颜色资源彼此独立，方便后续增加升级色。
 - 支持五档显示大小、始终置顶、系统通知、状态灯和登录时启动。
+- 可选“贴边自动收拢”：把 MOSS 拖到屏幕边缘后自动隐藏大部分机身，鼠标移到保留区域即可唤回。
 - macOS 可显示在独立全屏 Space 及全屏视频上方。
 - Windows 提供低内存取向的 Tauri 安装版和 Electron 便携版。
 - 托盘图标支持明暗背景适配；Windows 还可以手动指定图标颜色。
@@ -122,6 +124,8 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 
 详情面板会根据桌宠所在位置自动向上、下、左或右展开，不会改变桌宠原来的屏幕位置。正常完成的任务会在清单中继续保留五分钟，方便完成后返回工作界面；异常中断和取消的任务不会伪装成最近完成。额度每五分钟自动刷新一次，也可以在面板中手动刷新。
 
+开启“贴边自动收拢”后，将桌宠拖到当前显示器的左、右、上或下边缘即可触发。收拢后会保留约 22 像素用于唤回；展开任务或额度面板时会先恢复完整桌宠，避免详情被藏到屏幕外。该功能默认关闭，macOS、Windows Electron 和 Windows Tauri 三端行为一致。
+
 ## 设置说明
 
 右键桌宠或点击系统托盘图标可以调整：
@@ -133,6 +137,8 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 - 任务状态通知：任务完成或异常结束时显示系统通知。
 - 显示状态灯：显示当前任务状态和运行数量。
 - 单击桌宠查看额度：控制桌宠本体的额度面板快捷操作。
+- 贴边自动收拢：控制拖到屏幕边缘后的自动隐藏与悬停唤回，默认关闭。
+- Claude Code 额度桥接：可选地把 Claude Code 官方状态栏中的 5 小时/7 天额度快照保存为 MOSS 可读的本地脱敏文件；如果已有自定义状态栏则不会覆盖。
 - 登录时启动：登录系统后自动启动桌宠。
 - 任务栏图标：Windows 可选择自动、浅色或深色；macOS 由系统模板图标自动适配菜单栏。
 
@@ -156,7 +162,11 @@ Windows Tauri 版需要 Microsoft Edge WebView2 Runtime。Windows 10/11 通常�
 
 错误内容仅用于在本机判断是否属于网络中断等类别，不会保存错误原文。任务详情会按需显示本地线程标题与工作区名称，但不会复制或保存对话正文、模型回复、提示词或代码内容。子代理内部任务会被忽略，避免重复通知。
 
-套餐额度优先通过短时启动的 `codex app-server` 查询 `account/rateLimits/read` 和 `account/usage/read`；读取完成或超时后立即结束该子进程。应用不会读取、复制或保存 Codex 登录凭据。若当前登录方式不支持官方用量接口，剩余套餐额度会显示为不可用，图表才回退为本地估算，二者不会混淆。
+ChatGPT/Codex 套餐额度优先通过短时启动的 `codex app-server` 查询 `account/rateLimits/read` 和 `account/usage/read`；读取完成或超时后立即结束该子进程。额度窗口和近七天趋势分别容错，趋势接口失败不会再遮掉仍然有效的套餐额度。应用不会读取、复制或保存 Codex 登录凭据。
+
+Claude 桌面端目前没有公开的订阅额度接口。MOSS 不读取 Claude 的浏览器 Cookie 或 OAuth 凭据；安装并使用 Claude Code 时，可在 MOSS 菜单中开启“Claude Code 额度桥接”，把官方 `statusLine` 提供的最近 5 小时/7 天额度保存到 `~/.claude/moss-usage.json`。该文件只包含额度窗口和捕获时间，不包含对话、Cookie 或令牌；如果 Claude Code 已配置自定义状态栏，MOSS 会拒绝覆盖并保留原设置。没有该快照时会明确显示不可用。
+
+DeepSeek Harness 通过其本机 Host 保存的 `deepseek-account-platform/default` 登录记录，向该记录绑定的官方 HTTPS `get_user_summary` 地址发起一次只读余额查询。令牌只作为请求头在主进程短暂使用，不会发送到桌宠网页、写入 MOSS 设置或出现在日志中。近七天趋势来自 Harness 的本地 `session_projcache` 汇总。
 
 Codex 本地会话格式不是面向第三方应用承诺的稳定 API。如果未来格式发生变化，主要监听逻辑位于 `src/codex-monitor.js` 与 `tauri-windows/src-tauri/src/monitor.rs`。
 
@@ -188,6 +198,8 @@ Codex 本地会话格式不是面向第三方应用承诺的稳定 API。如果�
 ### 套餐额度显示为不可用
 
 确认 Codex Desktop 或 VS Code Codex 扩展已经登录 ChatGPT 账号，并尝试点击额度面板中的“刷新”。API Key 单独登录等部分认证方式不会返回 ChatGPT 套餐额度；此时 MOSS 仍可显示明确标注的本地 Token 趋势。
+
+Claude 订阅额度只有在 Claude Code 已产生包含 `rate_limits` 的官方状态栏快照后才能显示；Claude Desktop 单独运行时暂不提供可安全复用的公开接口。DeepSeek Harness 余额要求已经在 Harness 桌面端登录官方账户；仅配置第三方模型供应商时只能显示本地 Token 趋势。
 
 ## 本地开发
 

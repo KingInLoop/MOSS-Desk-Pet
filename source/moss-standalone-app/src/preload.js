@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('mossPet', {
   toggleSkin: () => ipcRenderer.send('toggle-skin'),
   showContextMenu: () => ipcRenderer.send('show-context-menu'),
   movePetBy: (deltaX, deltaY) => ipcRenderer.send('move-pet-by', { deltaX, deltaY }),
+  finishPetMove: () => ipcRenderer.send('finish-pet-move'),
   setDetailsExpanded: (expanded) => ipcRenderer.send('set-details-expanded', Boolean(expanded)),
   setPanelMode: (mode) => ipcRenderer.send('set-panel-mode', mode),
   openTask: (taskId) => ipcRenderer.invoke('open-task', taskId),

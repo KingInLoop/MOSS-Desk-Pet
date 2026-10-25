@@ -14,6 +14,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   launchAtLogin: false,
   showStatusBadge: true,
   clickPetForUsage: true,
+  autoHideAtScreenEdge: false,
+  claudeUsageBridge: false,
   trayIconMode: 'auto'
 });
 
@@ -34,6 +36,8 @@ function normalizeSettings(value = {}) {
     launchAtLogin: value.launchAtLogin ?? DEFAULT_SETTINGS.launchAtLogin,
     showStatusBadge: value.showStatusBadge ?? DEFAULT_SETTINGS.showStatusBadge,
     clickPetForUsage: value.clickPetForUsage ?? DEFAULT_SETTINGS.clickPetForUsage,
+    autoHideAtScreenEdge: value.autoHideAtScreenEdge ?? DEFAULT_SETTINGS.autoHideAtScreenEdge,
+    claudeUsageBridge: value.claudeUsageBridge ?? DEFAULT_SETTINGS.claudeUsageBridge,
     trayIconMode: normalizeTrayIconMode(value.trayIconMode)
   };
 }

@@ -30,6 +30,7 @@ window.mossPet = {
       .then(() => invoke('move_pet_by', { deltaX, deltaY }));
     return dragMoveQueue;
   },
+  finishPetMove: () => invoke('finish_pet_move'),
   setDetailsExpanded: (expanded) => invoke('set_details_expanded', { expanded: Boolean(expanded) }),
   setPanelMode: (mode) => invoke('set_panel_mode', { mode }),
   openTask: (taskId) => invoke('open_task', { taskId }),
