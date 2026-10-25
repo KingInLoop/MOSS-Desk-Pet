@@ -120,6 +120,13 @@ html, body {
 }
 
 #usage-view { height: calc(100% - 52px); padding-top: 8px; overflow: auto; }
+#usage-providers { display: flex; gap: 3px; padding: 0 3px 5px; overflow-x: auto; }
+.usage-provider { flex: 1 0 auto; padding: 3px 5px; border: 0; border-radius: 6px; background: rgb(255 255 255 / 7%); color: #7f8d99; font-size: 8px; cursor: pointer; }
+.usage-provider.active { background: rgb(0 201 229 / 18%); color: #8ff2ff; }
+.usage-provider.unavailable::after { content: ' ·'; color: #596570; }
+.usage-balance { display: flex; align-items: baseline; justify-content: space-between; margin: 2px 3px 6px; padding: 7px 8px; border-radius: 8px; background: rgb(255 255 255 / 6%); }
+.usage-balance strong { color: #72e7f5; font-size: 15px; }
+.usage-balance span { color: #8e9ba7; font-size: 9px; }
 .usage-limit { padding: 4px 3px 6px; }
 .usage-limit-header { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; }
 .usage-limit-header span { overflow: hidden; color: #c8d1d9; text-overflow: ellipsis; white-space: nowrap; }

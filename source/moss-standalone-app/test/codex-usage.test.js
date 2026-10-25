@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { executableCandidates, normalizeUsage, sevenDaySeries, windowLabel } = require('../src/codex-usage');
+const { claudeLimits, executableCandidates, normalizeUsage, sevenDaySeries, windowLabel } = require('../src/codex-usage');
 
 test('normalizes all account quota buckets without exposing credentials', () => {
   const now = new Date('2026-08-18T08:00:00Z');
@@ -26,6 +26,21 @@ test('fills missing days with zero', () => {
   assert.equal(days.length, 7);
   assert.deepEqual(days.at(-3), { date: '2026-08-16', tokens: 99 });
   assert.equal(days.at(-1).tokens, 0);
+});
+
+test('accepts the latest backward-compatible single rate-limit bucket', () => {
+  const snapshot = normalizeUsage({
+    rateLimits: { limitId: 'codex', primary: { usedPercent: 18, windowDurationMins: 300, resetsAt: 1790000000 } }
+  }, {});
+  assert.equal(snapshot.status, 'ok');
+  assert.equal(snapshot.limits[0].remainingPercent, 82);
+});
+
+test('normalizes Claude official status-line quota windows', () => {
+  const limits = claudeLimits({ five_hour: { used_percentage: 35, resets_at: 1790000000 }, seven_day: { used_percentage: 60 } });
+  assert.equal(limits.length, 2);
+  assert.equal(limits[0].remainingPercent, 65);
+  assert.equal(limits[1].label, 'Claude · 每周额度');
 });
 
 test('labels common quota windows and includes explicit binary first', () => {

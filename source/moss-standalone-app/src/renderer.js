@@ -14,6 +14,7 @@ const panelSummary = document.getElementById('panel-summary');
 const panelTitle = document.getElementById('panel-title');
 const panelClose = document.getElementById('panel-close');
 const usageView = document.getElementById('usage-view');
+const usageProviders = document.getElementById('usage-providers');
 const usageLimits = document.getElementById('usage-limits');
 const usageChart = document.getElementById('usage-chart');
 const usageNote = document.getElementById('usage-note');
@@ -38,6 +39,7 @@ let detailsOpen = false;
 let panelMode = 'tasks';
 let taskSnapshot = { activeCount: 0, tasks: [] };
 let usageSnapshot = { status: 'loading', limits: [], dailyUsage: [], message: '正在读取额度…' };
+let selectedUsageProvider = 'codex';
 let dragPointerId = null;
 let dragStarted = false;
 let dragOrigin = null;
@@ -255,12 +257,36 @@ function compactTokens(tokens) {
 }
 
 function renderUsage() {
-  const limits = Array.isArray(usageSnapshot.limits) ? usageSnapshot.limits : [];
-  const days = Array.isArray(usageSnapshot.dailyUsage) ? usageSnapshot.dailyUsage : [];
-  const sourceLabel = usageSnapshot.source === 'app-server' ? '官方账号数据' : '本地估算';
-  panelSummary.textContent = `${usageSnapshot.planType ? `${String(usageSnapshot.planType).toUpperCase()} · ` : ''}${sourceLabel}`;
+  const providers = Array.isArray(usageSnapshot.providers) && usageSnapshot.providers.length ? usageSnapshot.providers : [usageSnapshot];
+  if (!providers.some((provider) => provider.id === selectedUsageProvider)) selectedUsageProvider = providers[0]?.id || 'codex';
+  const selected = providers.find((provider) => provider.id === selectedUsageProvider) || providers[0] || usageSnapshot;
+  usageProviders.replaceChildren();
+  for (const provider of providers) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `usage-provider${provider.id === selectedUsageProvider ? ' active' : ''}${provider.status === 'ok' ? '' : ' unavailable'}`;
+    button.textContent = provider.id === 'codex' ? 'Codex' : provider.id === 'deepseek' ? 'DeepSeek' : 'Claude';
+    button.addEventListener('click', () => { selectedUsageProvider = provider.id; renderUsage(); });
+    usageProviders.append(button);
+  }
+  const limits = Array.isArray(selected.limits) ? selected.limits : [];
+  const balances = Array.isArray(selected.balances) ? selected.balances : [];
+  const days = Array.isArray(selected.dailyUsage) ? selected.dailyUsage : [];
+  const sourceLabels = { 'app-server': '官方账号数据', 'claude-statusline': '官方状态栏快照', 'deepseek-account': '官方账户余额' };
+  const sourceLabel = sourceLabels[selected.source] || '本地估算';
+  panelSummary.textContent = `${selected.planType ? `${String(selected.planType).toUpperCase()} · ` : ''}${sourceLabel}`;
   usageLimits.replaceChildren();
-  if (!limits.length) {
+  for (const balance of balances) {
+    const item = document.createElement('section');
+    item.className = 'usage-balance';
+    const value = document.createElement('strong');
+    value.textContent = `${balance.currency === 'CNY' ? '¥' : '$'}${Number(balance.total || 0).toFixed(2)}`;
+    const detail = document.createElement('span');
+    detail.textContent = `充值 ${Number(balance.normal || 0).toFixed(2)} · 赠送 ${Number(balance.bonus || 0).toFixed(2)}`;
+    item.append(value, detail);
+    usageLimits.append(item);
+  }
+  if (!limits.length && !balances.length) {
     const empty = document.createElement('div');
     empty.className = 'usage-empty';
     empty.textContent = '暂时无法读取套餐剩余额度';
@@ -301,8 +327,8 @@ function renderUsage() {
     column.append(value, bar, label);
     usageChart.append(column);
   }
-  const updated = usageSnapshot.updatedAt ? new Date(usageSnapshot.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-  usageNote.textContent = `${usageSnapshot.message || sourceLabel} · 更新 ${updated}`;
+  const updated = selected.updatedAt ? new Date(selected.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+  usageNote.textContent = `${selected.message || sourceLabel} · 更新 ${updated}`;
 }
 
 window.mossPet.onSettings((next) => {
@@ -336,7 +362,10 @@ function pointFromEvent(event) {
 
 function resetDrag(event) {
   if (dragPointerId === null || (event && event.pointerId !== dragPointerId)) return;
-  if (dragStarted) dragEndedAt = performance.now();
+  if (dragStarted) {
+    dragEndedAt = performance.now();
+    window.mossPet.finishPetMove?.();
+  }
   if (pet.hasPointerCapture?.(dragPointerId)) pet.releasePointerCapture(dragPointerId);
   pet.classList.remove('dragging');
   dragPointerId = null;

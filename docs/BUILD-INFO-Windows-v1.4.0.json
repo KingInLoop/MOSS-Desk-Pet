@@ -1,0 +1,20 @@
+{
+  "name": "MOSS Desk Pet Windows",
+  "version": "1.4.0",
+  "builtAt": "2026-10-25",
+  "packages": ["Tauri x64 NSIS", "Electron x64 portable"],
+  "features": [
+    "optional four-edge auto-hide with hover restore",
+    "latest Codex single- and multi-bucket quota responses",
+    "Claude Code official status-line quota bridge",
+    "DeepSeek Harness official account balance and local token history",
+    "registered install-location reuse and one-click close-and-upgrade"
+  ],
+  "verification": {
+    "electronUnitTests": 39,
+    "tauriUnitTests": 9,
+    "multiProviderUsage": "passed",
+    "installerSourceTests": "passed",
+    "archives": "passed"
+  }
+}

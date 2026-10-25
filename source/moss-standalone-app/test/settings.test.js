@@ -11,14 +11,17 @@ test('normalizes invalid settings to safe defaults', () => {
   assert.equal(result.scale, DEFAULT_SETTINGS.scale);
   assert.equal(result.trayIconMode, 'auto');
   assert.equal(result.clickPetForUsage, true);
+  assert.equal(result.autoHideAtScreenEdge, false);
+  assert.equal(result.claudeUsageBridge, false);
 });
 
 test('accepts supported visual settings', () => {
-  const result = normalizeSettings({ skin: 'light', eyeColor: 'cyan', scale: 0.875, notifications: false, clickPetForUsage: false, trayIconMode: 'light' });
+  const result = normalizeSettings({ skin: 'light', eyeColor: 'cyan', scale: 0.875, notifications: false, clickPetForUsage: false, autoHideAtScreenEdge: true, trayIconMode: 'light' });
   assert.equal(result.skin, 'light');
   assert.equal(result.eyeColor, 'cyan');
   assert.equal(result.scale, 0.875);
   assert.equal(result.notifications, false);
   assert.equal(result.trayIconMode, 'light');
   assert.equal(result.clickPetForUsage, false);
+  assert.equal(result.autoHideAtScreenEdge, true);
 });

@@ -1,0 +1,42 @@
+name: Build Windows packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: source/moss-standalone-app/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        working-directory: source/moss-standalone-app
+        run: pnpm install --frozen-lockfile
+      - name: Test shared JavaScript
+        working-directory: source/moss-standalone-app
+        run: pnpm test
+      - name: Build Tauri installer
+        working-directory: source/moss-standalone-app/tauri-windows
+        run: pnpm run build
+      - name: Collect installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          $installer = Get-ChildItem 'source/moss-standalone-app/tauri-windows/src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          Copy-Item $installer.FullName 'artifact/MOSS-Desk-Pet-Tauri-Windows-x64-v1.4.0-Setup.exe'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MOSS-Desk-Pet-Tauri-Windows-x64-v1.4.0
+          path: artifact/MOSS-Desk-Pet-Tauri-Windows-x64-v1.4.0-Setup.exe
+          if-no-files-found: error
