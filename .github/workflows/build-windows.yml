@@ -2,6 +2,10 @@ name: Build Windows packages
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'source/moss-standalone-app/**'
+      - '.github/workflows/build-windows.yml'
 
 permissions:
   contents: read
