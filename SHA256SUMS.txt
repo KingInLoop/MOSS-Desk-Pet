@@ -1,5 +1,5 @@
-9b1d1e5621abb2e60a690b6bbc56373fa8b169afe01c1ace7e4e5bf39fd26a8c  releases/Windows/MOSS-Desk-Pet-Tauri-Windows-x64-v1.3.9-Setup.exe
-28cf75f77b83ff53974ef0cdc72867fce8f180e18b46639cafe7e0bacc909468  releases/Windows/MOSS-Desk-Pet-Windows-x64-v1.3.9.zip
-674e947b530d1938c7cf645ac5ce3398ce6de06a02d2c99245fafe9d93d6f979  releases/macOS/MOSS-Desk-Pet-macOS-arm64-v1.3.9.zip
-3c10722240efd86290b0d963f615d02d521156f08f2fdcb42b40de3d6df2b836  releases/macOS/MOSS-Desk-Pet-macOS-x64-v1.3.9.zip
-8a28ad90557006085e7a7355ad6752ced774ef317e6ebbe26934b5aa6d899816  source/MOSS-Desk-Pet-source-v1.3.9.zip
+df9848b9aac2d281967f6edf5f6bef86885f5860e301c19ee7dd2eea72b3a506  releases/Windows/MOSS-Desk-Pet-Tauri-Windows-x64-v1.4.0-Setup.exe
+63b9b3dae6d90098b01a7f58756e17d272a0eb416c4197216558377b146f6714  releases/Windows/MOSS-Desk-Pet-Windows-x64-v1.4.0.zip
+0572eff44d8b2dc35c61c538e6ce9cba81ce93908b5e65de0cdaac790c95062b  releases/macOS/MOSS-Desk-Pet-macOS-arm64-v1.4.0.zip
+69cb455b24309fb11acf55304c0415387273a56195d5fd48b7222565824d2ba8  releases/macOS/MOSS-Desk-Pet-macOS-x64-v1.4.0.zip
+f80f153ef0e458d4817aadb9604c7d236996f6a3e4aa3aa594fb62fc78b9e59d  source/MOSS-Desk-Pet-source-v1.4.0.zip
