@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/*.test.js",
+    "test": "node scripts/run-tests.cjs",
     "test:context-menu": "electron test/context-menu-smoke.cjs",
     "test:mac-fullscreen": "electron test/macos-fullscreen-level-smoke.cjs",
     "test:mac-fullscreen-integration": "bash test/run-macos-fullscreen-integration.sh",
