@@ -4,8 +4,8 @@
   "version": "1.4.0",
   "scripts": {
     "sync-ui": "node sync-ui.mjs",
-    "dev": "node sync-ui.mjs && cargo tauri dev",
-    "build": "node sync-ui.mjs && cargo tauri build"
+    "dev": "node sync-ui.mjs && tauri dev",
+    "build": "node sync-ui.mjs && tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.5"
